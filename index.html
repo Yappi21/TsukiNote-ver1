@@ -53,6 +53,10 @@
           <div class="goal-box monthly-goal"><div class="goal-icon">◎</div><div><label for="monthlyGoal">今月の目標</label><textarea id="monthlyGoal" rows="2" placeholder="今月達成したいことを入力…"></textarea></div><span class="save-state">自動保存</span></div>
           <div class="goal-box weekly-goal"><div class="goal-icon">✓</div><div><label for="weeklyGoal">今週の目標</label><textarea id="weeklyGoal" rows="2" placeholder="今週集中することを入力…"></textarea></div><span class="save-state">自動保存</span></div>
         </section>
+        <section class="mobile-task-overview" aria-label="タスク期限">
+          <div class="mobile-task-heading"><strong>タスク期限</strong><span id="mobileOpenTaskCount">0件</span></div>
+          <div class="mobile-task-list" id="mobileTaskList"></div>
+        </section>
         <div class="weekday-row"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>
         <div id="calendarGrid" class="calendar-grid"></div>
       </section>
@@ -98,6 +102,7 @@
     <nav class="mobile-bottom-nav" aria-label="メインメニュー">
       <button class="mobile-nav-item active" type="button" data-view="calendar"><span>▦</span><small>予定</small></button>
       <button class="mobile-nav-item" type="button" data-view="notes"><span>▤</span><small>メモ</small></button>
+      <button class="mobile-nav-item mobile-goals-button" id="mobileGoalsButton" type="button"><span>◎</span><small>目標</small></button>
       <button class="mobile-nav-item" type="button" data-view="exercise"><span>♡</span><small>運動</small></button>
       <button class="mobile-nav-item" type="button" data-view="diary"><span>✎</span><small>日記</small></button>
     </nav>
@@ -140,6 +145,15 @@
       <div class="goal-hint">改行して、複数の目標や行動をまとめて記録できます。</div>
       <div class="dialog-actions"><span></span><button type="button" class="secondary" id="cancelGoalDialog">キャンセル</button><button type="submit" class="primary">保存</button></div>
     </form>
+  </dialog>
+
+  <dialog id="mobileGoalsDialog" class="mobile-goals-dialog">
+    <div class="mobile-goals-wrap">
+      <div class="dialog-head"><div><p>MY GOALS</p><h2>目標</h2></div><button type="button" class="icon-button" id="closeMobileGoals">×</button></div>
+      <p class="mobile-goals-description">編集する目標を選んでください。</p>
+      <button type="button" class="mobile-goal-card monthly" data-mobile-goal="monthly"><span>◎</span><div><strong>今月の目標</strong><p id="mobileMonthlyGoalPreview">まだ設定されていません</p></div><i>›</i></button>
+      <button type="button" class="mobile-goal-card weekly" data-mobile-goal="weekly"><span>✓</span><div><strong>今週の目標</strong><p id="mobileWeeklyGoalPreview">まだ設定されていません</p></div><i>›</i></button>
+    </div>
   </dialog>
 
   <dialog id="collectionDialog" class="collection-dialog">
