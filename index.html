@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#f7f8fc" />
   <title>TsukiNote — カレンダーとメモ</title>
   <link rel="stylesheet" href="styles.css" />
@@ -12,6 +12,7 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
+      <button class="mobile-menu-button" id="mobileMenuButton" type="button" aria-label="メニューを開く" aria-expanded="false">☰</button>
       <div class="brand"><span class="brand-mark">T</span><span>TsukiNote</span></div>
       <div class="search-wrap">
         <span class="search-icon">⌕</span>
@@ -21,7 +22,7 @@
       <button class="icon-button" id="themeButton" title="表示テーマ">☼</button>
     </header>
 
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <button class="create-button" id="newEventButton"><span>＋</span> 新しい予定</button>
       <nav>
         <button class="nav-item active" data-view="calendar"><span>▦</span> カレンダー</button>
@@ -40,6 +41,7 @@
       </section>
       <div class="storage-note">データはこのブラウザに安全に保存されます</div>
     </aside>
+    <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="メニューを閉じる"></button>
 
     <main class="main">
       <section id="calendarView" class="view active-view">
@@ -91,6 +93,14 @@
       </div>
       <div id="quickNotesList" class="quick-notes-list"></div>
     </aside>
+
+    <button class="mobile-fab" id="mobileNewEvent" type="button" aria-label="新しい予定またはタスクを追加">＋</button>
+    <nav class="mobile-bottom-nav" aria-label="メインメニュー">
+      <button class="mobile-nav-item active" type="button" data-view="calendar"><span>▦</span><small>予定</small></button>
+      <button class="mobile-nav-item" type="button" data-view="notes"><span>▤</span><small>メモ</small></button>
+      <button class="mobile-nav-item" type="button" data-view="exercise"><span>♡</span><small>運動</small></button>
+      <button class="mobile-nav-item" type="button" data-view="diary"><span>✎</span><small>日記</small></button>
+    </nav>
   </div>
 
   <dialog id="eventDialog">
