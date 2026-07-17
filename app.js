@@ -41,7 +41,7 @@ $('#goalForm').onsubmit=()=>{const target=$('#goalType').value==='monthly'?'#mon
 $('#closeGoalDialog').onclick=$('#cancelGoalDialog').onclick=()=>$('#goalDialog').close();
 function refreshMobileGoals(){const monthly=$('#monthlyGoal').value.trim(),weekly=$('#weeklyGoal').value.trim();$('#mobileMonthlyGoalPreview').textContent=monthly||'まだ設定されていません';$('#mobileWeeklyGoalPreview').textContent=weekly||'まだ設定されていません'}
 $('#mobileGoalsButton').onclick=()=>{refreshMobileGoals();$('#mobileGoalsDialog').showModal()};$('#closeMobileGoals').onclick=()=>$('#mobileGoalsDialog').close();$$('[data-mobile-goal]').forEach(button=>button.onclick=()=>{$('#mobileGoalsDialog').close();openGoal(button.dataset.mobileGoal)});
-const save=()=>{localStorage.setItem('daynote-events',JSON.stringify(events));localStorage.setItem('daynote-notes',JSON.stringify(notes));recordLocalChange()};
+const save=()=>{localStorage.setItem('daynote-events',JSON.stringify(events));localStorage.setItem('daynote-notes',JSON.stringify(notes));recordLocalChange();schedulePushReminderSync()};
 const saveCollections=()=>{localStorage.setItem('daynote-calendars',JSON.stringify(calendars));localStorage.setItem('daynote-notebooks',JSON.stringify(notebooks));localStorage.setItem('daynote-calendar-colors',JSON.stringify(calendarColors));localStorage.setItem('daynote-notebook-colors',JSON.stringify(notebookColors));recordLocalChange()};
 
 function renderCollections(){
@@ -150,7 +150,7 @@ $('#mobileMenuButton').onclick=()=>{const open=!$('#sidebar').classList.contains
 $('#searchInput').oninput=render;$('#themeButton').onclick=()=>document.body.classList.toggle('dark');
 document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#searchInput').focus()}if(e.key==='n'&&(e.ctrlKey||e.metaKey)){e.preventDefault();openEvent()}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMobileSidebar()});
-function updateNotificationStatus(){if(!('Notification'in window)){$('#notificationStatus').textContent='このブラウザは通知非対応';return}$('#notificationStatus').textContent=Notification.permission==='granted'?'通知オン':Notification.permission==='denied'?'通知がブロックされています':'保存時に許可を確認'}
+function updateNotificationStatus(){if(localStorage.getItem('tsukinote-push-key')){$('#notificationStatus').textContent='プッシュ通知オン';return}if(!('Notification'in window)){$('#notificationStatus').textContent='このブラウザは通知非対応';return}$('#notificationStatus').textContent=Notification.permission==='granted'?'この画面を開いている間は通知オン':Notification.permission==='denied'?'通知がブロックされています':'「データ」からプッシュ通知を設定'}
 function taskDeadline(task){return new Date(`${task.endDate||task.date}T${task.dueTime||'23:59'}:00`).getTime()}
 function formatRemaining(task){const ms=taskDeadline(task)-Date.now(),abs=Math.abs(ms),days=Math.floor(abs/86400000),hours=Math.floor(abs%86400000/3600000),mins=Math.floor(abs%3600000/60000),secs=Math.floor(abs%60000/1000);const parts=[];if(days)parts.push(`${days}日`);if(days||hours)parts.push(`${hours}時間`);if(days||hours||mins)parts.push(`${mins}分`);parts.push(`${secs}秒`);const text=parts.join('');return ms<0?`期限超過 ${text}`:`あと${text}`}
 function renderSidebarTasks(){
@@ -163,6 +163,56 @@ function renderSidebarTasks(){
 async function requestNotificationPermission(){if(!('Notification'in window)||Notification.permission!=='default')return;try{await Notification.requestPermission();updateNotificationStatus()}catch(e){console.warn('通知を有効にできませんでした')}}
 function checkReminders(){if(!('Notification'in window)||Notification.permission!=='granted')return;const now=Date.now(),sent=JSON.parse(localStorage.getItem('daynote-sent-reminders')||'{}');events.filter(e=>e.type==='event').forEach(e=>{const base=new Date(`${e.date}T${e.time||'09:00'}:00`).getTime();[['thirty',1800000,'30分後'],['hour',3600000,'1時間後'],['day',86400000,'明日']].forEach(([kind,offset,label])=>{const notifyAt=base-offset,key=`${e.id}-${kind}-${e.date}`;if(e.reminders?.[kind]&&!sent[key]&&now>=notifyAt&&now<notifyAt+60000){new Notification(e.title,{body:`${label}の予定です${e.time?'（'+e.time+'）':''}`,tag:key});sent[key]=Date.now()}})});localStorage.setItem('daynote-sent-reminders',JSON.stringify(sent))}
 setInterval(checkReminders,30000);setInterval(renderSidebarTasks,1000);checkReminders();
+
+const pushApiBase='https://tsukinotepush-hnbabucsa3bpg0f5.japanwest-01.azurewebsites.net/api';
+let pushSyncTimer=null,pushSyncBusy=false;
+function setPushStatus(message,state=''){
+  $('#pushStatus').textContent=message;$('#pushIndicator').textContent=state||'未設定';$('#pushIndicator').className=state==='通知オン'?'synced':state==='エラー'?'error':'';
+  const enabled=!!localStorage.getItem('tsukinote-push-key');$('#enablePush').classList.toggle('hidden',enabled);$('#disablePush').classList.toggle('hidden',!enabled);$('#pushAccessKey').classList.toggle('hidden',enabled);$('#pushAccessKey').closest('label').classList.toggle('hidden',enabled);updateNotificationStatus();
+}
+function pushDeviceId(){let id=localStorage.getItem('tsukinote-push-device-id');if(!id){id=crypto.randomUUID();localStorage.setItem('tsukinote-push-device-id',id)}return id}
+function urlBase64ToUint8Array(value){const padding='='.repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,'+').replace(/_/g,'/'),raw=atob(base64);return Uint8Array.from([...raw].map(char=>char.charCodeAt(0)))}
+function buildPushReminders(){
+  const offsets=[['thirty',1800000,'30分後'],['hour',3600000,'1時間後'],['day',86400000,'明日']],result=[];
+  events.filter(item=>item.type==='event').forEach(item=>{const time=item.time||'09:00',base=new Date(`${item.date}T${time}:00`).getTime();offsets.forEach(([kind,offset,label])=>{if(!item.reminders?.[kind])return;const notifyAt=base-offset;if(notifyAt<Date.now()-86400000)return;result.push({id:`${item.id}-${kind}-${item.date}-${time}`,notifyAt:new Date(notifyAt).toISOString(),title:item.title,body:`${label}の予定です${item.time?'（'+item.time+'）':''}`,tag:`${item.id}-${kind}`})})});
+  return result;
+}
+async function pushRequest(path,options={}){
+  const key=options.key||localStorage.getItem('tsukinote-push-key')||'';
+  const response=await fetch(pushApiBase+path,{...options,headers:{'Content-Type':'application/json','X-TsukiNote-Key':key,...options.headers}});
+  if(!response.ok){const detail=await response.json().catch(()=>({}));const error=new Error(detail.error||`push-${response.status}`);error.status=response.status;throw error}return response.json().catch(()=>({}));
+}
+async function syncPushReminders(){
+  if(pushSyncBusy||!localStorage.getItem('tsukinote-push-key')||!navigator.onLine)return;pushSyncBusy=true;clearTimeout(pushSyncTimer);
+  try{await pushRequest('/reminders',{method:'POST',body:JSON.stringify({reminders:buildPushReminders()})});setPushStatus('予定の通知時刻をAzureと同期しました。','通知オン')}
+  catch(error){console.warn('プッシュ通知時刻を同期できませんでした',error);setPushStatus(error.status===401?'アクセスコードが一致しません。いったん通知を解除して再設定してください。':'通知サーバーと同期できませんでした。通信状態を確認してください。','エラー')}
+  finally{pushSyncBusy=false}
+}
+function schedulePushReminderSync(){if(!localStorage.getItem('tsukinote-push-key'))return;clearTimeout(pushSyncTimer);pushSyncTimer=setTimeout(syncPushReminders,1800)}
+async function enablePushNotifications(){
+  const key=$('#pushAccessKey').value.trim();if(key.length<20){setPushStatus('20文字以上の通知アクセスコードを入力してください。','エラー');return}
+  if(!isSecureContext||!('serviceWorker'in navigator)||!('PushManager'in window)||!('Notification'in window)){setPushStatus('この環境はWebプッシュ通知に対応していません。GitHub Pagesをホーム画面に追加して開いてください。','エラー');return}
+  $('#enablePush').disabled=true;setPushStatus('通知を設定しています…','設定中');
+  try{
+    const configResponse=await fetch(pushApiBase+'/push-config',{cache:'no-store'});if(!configResponse.ok)throw new Error('server-not-configured');const config=await configResponse.json();
+    const registration=await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;
+    const permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('permission-denied');
+    let subscription=await registration.pushManager.getSubscription();if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(config.publicKey)});
+    await pushRequest('/push-subscriptions',{method:'POST',key,body:JSON.stringify({deviceId:pushDeviceId(),subscription:subscription.toJSON()})});
+    localStorage.setItem('tsukinote-push-key',key);await syncPushReminders();setPushStatus('この端末への通知を有効にしました。','通知オン');
+  }catch(error){console.warn('プッシュ通知を有効にできませんでした',error);const message=error.message==='permission-denied'?'通知が許可されませんでした。端末の設定を確認してください。':error.message==='server-not-configured'?'Azure側の通知鍵がまだ設定されていません。':'通知を有効にできませんでした。アクセスコードと通信状態を確認してください。';setPushStatus(message,'エラー')}
+  finally{$('#enablePush').disabled=false}
+}
+async function disablePushNotifications(){
+  try{const registration=await navigator.serviceWorker.getRegistration('./sw.js'),subscription=await registration?.pushManager.getSubscription();if(subscription){try{await pushRequest('/push-subscriptions',{method:'DELETE',body:JSON.stringify({endpoint:subscription.endpoint})})}catch{}await subscription.unsubscribe()}}
+  finally{localStorage.removeItem('tsukinote-push-key');$('#pushAccessKey').value='';setPushStatus('この端末のプッシュ通知を解除しました。','未設定')}
+}
+async function initializePushNotifications(){
+  const key=localStorage.getItem('tsukinote-push-key');if(!key){setPushStatus('iPhoneではSafariの共有メニューから「ホーム画面に追加」したTsukiNoteで設定してください。','未設定');return}
+  if(!('serviceWorker'in navigator)||!('PushManager'in window)){setPushStatus('この端末はWebプッシュ通知に対応していません。','エラー');return}
+  try{await navigator.serviceWorker.register('./sw.js');const registration=await navigator.serviceWorker.ready,subscription=await registration.pushManager.getSubscription();if(subscription){setPushStatus('この端末の通知は有効です。','通知オン');schedulePushReminderSync()}else{localStorage.removeItem('tsukinote-push-key');setPushStatus('通知登録が解除されています。もう一度有効にしてください。','未設定')}}catch{setPushStatus('通知の状態を確認できませんでした。','エラー')}
+}
+$('#enablePush').onclick=enablePushNotifications;$('#disablePush').onclick=disablePushNotifications;
 function esc(s=''){return s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function hexAlpha(hex,alpha){return hex+alpha}
 const backupKeys=['daynote-events','daynote-notes','daynote-calendars','daynote-notebooks','daynote-calendar-colors','daynote-notebook-colors','daynote-goals','tsukinote-exercises','tsukinote-exercise-records','tsukinote-exercise-targets','tsukinote-diary'];
@@ -272,6 +322,7 @@ $('#cloudUpload').onclick=()=>{if(confirm('この端末の現在のデータをO
 $('#cloudDownload').onclick=()=>downloadCloudData(true);
 renderCollections();render();
 initializeOneDrive();
+initializePushNotifications();
 window.addEventListener('online',()=>{if(cloudAccount&&localStorage.getItem('tsukinote-cloud-linked')==='1')reconcileCloudData()});
 window.addEventListener('focus',()=>{if(cloudAccount)reconcileCloudData()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&cloudAccount)reconcileCloudData()});

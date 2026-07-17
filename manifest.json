@@ -1,0 +1,14 @@
+{
+  "name": "TsukiNote",
+  "short_name": "TsukiNote",
+  "description": "カレンダー、タスク、メモ、日記をひとつにまとめる個人用アプリ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f8fc",
+  "theme_color": "#557bea",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
