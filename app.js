@@ -169,7 +169,7 @@ const cloudClientId='4e330336-9a95-42ff-a190-f7c91d71be89';
 const cloudScopes=['Files.ReadWrite.AppFolder'];
 const cloudFileUrl='https://graph.microsoft.com/v1.0/me/drive/special/approot:/TsukiNote-data.json:/content';
 const cloudRedirectUri='https://yappi21.github.io/TsukiNote-ver1/';
-let cloudSyncTimer=null,cloudSyncSuppressed=false,cloudSyncBusy=false,cloudAccount=null,msalApp=null;
+let cloudSyncTimer=null,cloudSyncSuppressed=false,cloudSyncBusy=false,cloudReconcileBusy=false,cloudAccount=null,msalApp=null;
 function recordLocalChange(){
   if(cloudSyncSuppressed)return;
   localStorage.setItem('tsukinote-local-updated-at',String(Date.now()));
@@ -221,7 +221,7 @@ async function downloadCloudData(manual=true){
   finally{cloudSyncBusy=false}
 }
 async function reconcileCloudData(){
-  if(localStorage.getItem('tsukinote-cloud-linked')!=='1')return;
+  if(localStorage.getItem('tsukinote-cloud-linked')!=='1'||cloudSyncBusy||cloudReconcileBusy)return;cloudReconcileBusy=true;
   try{
     setCloudStatus('OneDriveの更新を確認中…','同期中');const remote=await readCloudData();if(!remote){await uploadCloudData(true);return}
     const remoteAt=Date.parse(remote.exportedAt)||0,lastAt=Number(localStorage.getItem('tsukinote-last-cloud-sync'))||0,localAt=Number(localStorage.getItem('tsukinote-local-updated-at'))||0;
@@ -229,6 +229,7 @@ async function reconcileCloudData(){
     if(remoteAt>lastAt){applyBackupData(remote);localStorage.setItem('tsukinote-last-cloud-sync',String(remoteAt));localStorage.setItem('tsukinote-local-updated-at',String(remoteAt));location.reload();return}
     if(localAt>lastAt){await uploadCloudData(true);return}setCloudStatus('最新の状態です。','同期済み');
   }catch(error){console.warn('自動同期を確認できませんでした',error);setCloudStatus('自動同期を確認できませんでした。「データ」から再試行できます。','エラー')}
+  finally{cloudReconcileBusy=false}
 }
 async function initializeOneDrive(){
   if(!window.msal){setCloudStatus('Microsoftログイン機能を読み込めませんでした。インターネット接続を確認してください。','エラー');return}
@@ -270,3 +271,6 @@ $('#cloudDownload').onclick=()=>downloadCloudData(true);
 renderCollections();render();
 initializeOneDrive();
 window.addEventListener('online',()=>{if(cloudAccount&&localStorage.getItem('tsukinote-cloud-linked')==='1')reconcileCloudData()});
+window.addEventListener('focus',()=>{if(cloudAccount)reconcileCloudData()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&cloudAccount)reconcileCloudData()});
+setInterval(()=>{if(cloudAccount&&!document.hidden)reconcileCloudData()},30000);
