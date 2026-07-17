@@ -194,9 +194,9 @@ async function enablePushNotifications(){
   if(!isSecureContext||!('serviceWorker'in navigator)||!('PushManager'in window)||!('Notification'in window)){setPushStatus('この環境はWebプッシュ通知に対応していません。GitHub Pagesをホーム画面に追加して開いてください。','エラー');return}
   $('#enablePush').disabled=true;setPushStatus('通知を設定しています…','設定中');
   try{
+    const permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('permission-denied');
     const configResponse=await fetch(pushApiBase+'/push-config',{cache:'no-store'});if(!configResponse.ok)throw new Error('server-not-configured');const config=await configResponse.json();
     const registration=await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;
-    const permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('permission-denied');
     let subscription=await registration.pushManager.getSubscription();if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(config.publicKey)});
     await pushRequest('/push-subscriptions',{method:'POST',key,body:JSON.stringify({deviceId:pushDeviceId(),subscription:subscription.toJSON()})});
     localStorage.setItem('tsukinote-push-key',key);await syncPushReminders();setPushStatus('この端末への通知を有効にしました。','通知オン');
