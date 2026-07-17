@@ -32,7 +32,7 @@ let diaryEntries=JSON.parse(localStorage.getItem('tsukinote-diary')||'{}');
 let selectedMood='';
 const goals=JSON.parse(localStorage.getItem('daynote-goals')||'{}');
 $('#monthlyGoal').value=goals.monthly||'';$('#weeklyGoal').value=goals.weekly||'';
-function saveGoals(){localStorage.setItem('daynote-goals',JSON.stringify({monthly:$('#monthlyGoal').value,weekly:$('#weeklyGoal').value}));}
+function saveGoals(){localStorage.setItem('daynote-goals',JSON.stringify({monthly:$('#monthlyGoal').value,weekly:$('#weeklyGoal').value}));recordLocalChange()}
 $('#monthlyGoal').oninput=saveGoals;$('#weeklyGoal').oninput=saveGoals;
 function openGoal(type){const monthly=type==='monthly';$('#goalType').value=type;$('#goalDialogTitle').textContent=monthly?'今月の目標':'今週の目標';$('#goalText').value=$(monthly?'#monthlyGoal':'#weeklyGoal').value;$('#goalDialog').showModal();setTimeout(()=>$('#goalText').focus(),50)}
 $('.monthly-goal').onclick=e=>{if(e.target.id!=='monthlyGoal')openGoal('monthly')};$('.weekly-goal').onclick=e=>{if(e.target.id!=='weeklyGoal')openGoal('weekly')};
@@ -41,8 +41,8 @@ $('#goalForm').onsubmit=()=>{const target=$('#goalType').value==='monthly'?'#mon
 $('#closeGoalDialog').onclick=$('#cancelGoalDialog').onclick=()=>$('#goalDialog').close();
 function refreshMobileGoals(){const monthly=$('#monthlyGoal').value.trim(),weekly=$('#weeklyGoal').value.trim();$('#mobileMonthlyGoalPreview').textContent=monthly||'まだ設定されていません';$('#mobileWeeklyGoalPreview').textContent=weekly||'まだ設定されていません'}
 $('#mobileGoalsButton').onclick=()=>{refreshMobileGoals();$('#mobileGoalsDialog').showModal()};$('#closeMobileGoals').onclick=()=>$('#mobileGoalsDialog').close();$$('[data-mobile-goal]').forEach(button=>button.onclick=()=>{$('#mobileGoalsDialog').close();openGoal(button.dataset.mobileGoal)});
-const save=()=>{localStorage.setItem('daynote-events',JSON.stringify(events));localStorage.setItem('daynote-notes',JSON.stringify(notes));};
-const saveCollections=()=>{localStorage.setItem('daynote-calendars',JSON.stringify(calendars));localStorage.setItem('daynote-notebooks',JSON.stringify(notebooks));localStorage.setItem('daynote-calendar-colors',JSON.stringify(calendarColors));localStorage.setItem('daynote-notebook-colors',JSON.stringify(notebookColors));};
+const save=()=>{localStorage.setItem('daynote-events',JSON.stringify(events));localStorage.setItem('daynote-notes',JSON.stringify(notes));recordLocalChange()};
+const saveCollections=()=>{localStorage.setItem('daynote-calendars',JSON.stringify(calendars));localStorage.setItem('daynote-notebooks',JSON.stringify(notebooks));localStorage.setItem('daynote-calendar-colors',JSON.stringify(calendarColors));localStorage.setItem('daynote-notebook-colors',JSON.stringify(notebookColors));recordLocalChange()};
 
 function renderCollections(){
   $('#calendarListItems').innerHTML=calendars.map(name=>`<div class="collection-row"><label><input type="checkbox" checked data-filter="${esc(name)}"><i class="dot" style="background:${calendarColors[name]||'#557bea'}"></i><span>${esc(name)}</span></label><button data-delete-calendar="${esc(name)}" title="削除">×</button></div>`).join('');
@@ -69,7 +69,7 @@ function render(){renderCalendar();renderMini();renderNotes();renderSidebarTasks
 
 function mondayOf(date=new Date()){const d=new Date(date);d.setHours(0,0,0,0);const day=d.getDay()||7;d.setDate(d.getDate()-day+1);return d}
 function exerciseWeekKey(){return keyDate(mondayOf())}
-function saveExercises(){localStorage.setItem('tsukinote-exercises',JSON.stringify(exerciseNames));localStorage.setItem('tsukinote-exercise-records',JSON.stringify(exerciseRecords));localStorage.setItem('tsukinote-exercise-targets',JSON.stringify(exerciseTargets))}
+function saveExercises(){localStorage.setItem('tsukinote-exercises',JSON.stringify(exerciseNames));localStorage.setItem('tsukinote-exercise-records',JSON.stringify(exerciseRecords));localStorage.setItem('tsukinote-exercise-targets',JSON.stringify(exerciseTargets));recordLocalChange()}
 function renderExercises(){const monday=mondayOf(),weekKey=exerciseWeekKey(),week=exerciseRecords[weekKey]||{};const sunday=new Date(monday);sunday.setDate(monday.getDate()+6);$('#exerciseWeekLabel').textContent=`${monday.getMonth()+1}月${monday.getDate()}日 – ${sunday.getMonth()+1}月${sunday.getDate()}日`;const days=['月','火','水','木','金','土','日'];$('#exerciseTableHead').innerHTML=`<tr><th>種目</th>${days.map((day,i)=>{const d=new Date(monday);d.setDate(monday.getDate()+i);return `<th class="${keyDate(d)===keyDate(today)?'exercise-today':''}">${day}<small>${d.getDate()}</small></th>`}).join('')}<th>合計</th><th></th></tr>`;$('#exerciseTableBody').innerHTML=exerciseNames.map((name,row)=>{const values=week[name]||Array(7).fill(0),total=values.reduce((a,b)=>a+(Number(b)||0),0);return `<tr><th><span class="exercise-mark">${row+1}</span>${esc(name)}</th>${values.map((value,i)=>`<td><input type="number" min="0" max="9999" inputmode="numeric" value="${Number(value)||0}" data-exercise="${esc(name)}" data-exercise-day="${i}" aria-label="${esc(name)} ${days[i]}曜日"></td>`).join('')}<td class="exercise-total">${total}<small>回</small></td><td><button class="exercise-delete" data-delete-exercise="${esc(name)}" title="種目を削除">×</button></td></tr>`}).join('');$$('[data-exercise]').forEach(input=>input.oninput=()=>{const name=input.dataset.exercise,day=Number(input.dataset.exerciseDay);exerciseRecords[weekKey]??={};exerciseRecords[weekKey][name]??=Array(7).fill(0);exerciseRecords[weekKey][name][day]=Math.max(0,Number(input.value)||0);saveExercises();renderExercises()});$$('[data-delete-exercise]').forEach(b=>b.onclick=()=>{if(!confirm(`「${b.dataset.deleteExercise}」を削除しますか？`))return;exerciseNames=exerciseNames.filter(n=>n!==b.dataset.deleteExercise);saveExercises();renderExercises()});const all=exerciseNames.flatMap(n=>week[n]||Array(7).fill(0)).map(Number);$('#weeklyExerciseTotal').textContent=all.reduce((a,b)=>a+(b||0),0);$('#completedExerciseCells').textContent=all.filter(v=>v>0).length;const activeDays=new Set();exerciseNames.forEach(n=>(week[n]||[]).forEach((v,i)=>{if(Number(v)>0)activeDays.add(i)}));$('#activeExerciseDays').textContent=activeDays.size}
 $('#addExerciseButton').onclick=()=>{$('#exerciseName').value='';$('#exerciseError').textContent='';$('#exerciseDialog').showModal();setTimeout(()=>$('#exerciseName').focus(),50)};$('#closeExerciseDialog').onclick=$('#cancelExerciseDialog').onclick=()=>$('#exerciseDialog').close();$('#exerciseForm').onsubmit=e=>{e.preventDefault();const name=$('#exerciseName').value.trim();if(!name){$('#exerciseError').textContent='種目名を入力してください';return}if(exerciseNames.includes(name)){ $('#exerciseError').textContent='同じ種目がすでにあります';return}exerciseNames.push(name);saveExercises();$('#exerciseDialog').close();renderExercises()};
 function updateExerciseGoalState(row,name){const total=(exerciseRecords[exerciseWeekKey()]?.[name]||[]).reduce((a,b)=>a+(Number(b)||0),0),target=Number(exerciseTargets[name])||0;row.classList.toggle('exercise-achieved',target>0&&total>=target);const totalCell=row.querySelector('.exercise-total');if(totalCell)totalCell.title=target?`目標 ${target}回中 ${total}回`:'目標回数を設定してください'}
@@ -115,11 +115,11 @@ function renderNotes(){
 }
 function noteHTML(n){const color=notebookColors[n.notebook]||'#557bea';return `<article class="note-card" data-id="${n.id}"><div class="notebook-badge" style="background:${hexAlpha(color,'18')};color:${color}">${esc(n.notebook)}</div><h3>${n.pinned?'<span class="pin">◆</span> ':''}${esc(n.title)}</h3><p>${esc(n.body).slice(0,180)}</p><div class="note-meta"><span>${new Date(n.updated).toLocaleDateString('ja-JP')}</span><span>編集 ›</span></div></article>`}
 const moodEmoji={'最高':'😄','良い':'🙂','普通':'😐','疲れた':'😮‍💨','つらい':'😔'};let diarySaveTimer;
-function saveCurrentDiary(){clearTimeout(diarySaveTimer);const date=$('#diaryDate').value,title=$('#diaryTitle').value.trim(),body=$('#diaryBody').value.trim();if(!date)return;if(!title&&!body&&!selectedMood){$('#diarySaveStatus').textContent='内容を入力してください';return}diaryEntries[date]={date,title,body,mood:selectedMood,updated:Date.now()};localStorage.setItem('tsukinote-diary',JSON.stringify(diaryEntries));$('#diarySaveStatus').textContent='保存済み';renderDiaryHistory()}
+function saveCurrentDiary(){clearTimeout(diarySaveTimer);const date=$('#diaryDate').value,title=$('#diaryTitle').value.trim(),body=$('#diaryBody').value.trim();if(!date)return;if(!title&&!body&&!selectedMood){$('#diarySaveStatus').textContent='内容を入力してください';return}diaryEntries[date]={date,title,body,mood:selectedMood,updated:Date.now()};localStorage.setItem('tsukinote-diary',JSON.stringify(diaryEntries));recordLocalChange();$('#diarySaveStatus').textContent='保存済み';renderDiaryHistory()}
 function queueDiarySave(){clearTimeout(diarySaveTimer);$('#diarySaveStatus').textContent='自動保存中…';diarySaveTimer=setTimeout(saveCurrentDiary,900)}
 function loadDiary(date){clearTimeout(diarySaveTimer);const entry=diaryEntries[date];$('#diaryDate').value=date;$('#diaryTitle').value=entry?.title||'';$('#diaryBody').value=entry?.body||'';selectedMood=entry?.mood||'';$$('[data-mood]').forEach(b=>b.classList.toggle('selected',b.dataset.mood===selectedMood));$('#diaryWordCount').textContent=`${($('#diaryTitle').value+$('#diaryBody').value).length}文字`;$('#diarySaveStatus').textContent=entry?'保存済み':'新しい日記';$('#deleteDiary').style.visibility=entry?'visible':'hidden'}
 function renderDiaryHistory(){const q=$('#diarySearch')?.value.trim().toLowerCase()||'',entries=Object.values(diaryEntries).filter(e=>!q||(e.title+' '+e.body).toLowerCase().includes(q)).sort((a,b)=>b.date.localeCompare(a.date));$('#diaryCount').textContent=Object.keys(diaryEntries).length;$('#diaryHistoryList').innerHTML=entries.length?entries.map(e=>{const d=new Date(e.date+'T00:00:00');return `<button class="diary-history-item" data-diary-date="${e.date}"><span class="diary-history-date"><strong>${d.getDate()}</strong><small>${d.getFullYear()}.${pad(d.getMonth()+1)}</small></span><span class="diary-history-content"><strong>${esc(e.title||'無題の日記')}</strong><small>${esc(e.body).slice(0,55)}</small></span><span class="diary-history-mood">${moodEmoji[e.mood]||'・'}</span></button>`}).join(''):'<div class="diary-empty">まだ日記がありません。<br>今日の出来事を書いてみましょう。</div>';$$('[data-diary-date]').forEach(b=>b.onclick=()=>loadDiary(b.dataset.diaryDate))}
-$('#diaryDate').onchange=e=>loadDiary(e.target.value);$('#diaryTitle').oninput=$('#diaryBody').oninput=()=>{$('#diaryWordCount').textContent=`${($('#diaryTitle').value+$('#diaryBody').value).length}文字`;queueDiarySave()};$$('[data-mood]').forEach(b=>b.onclick=()=>{selectedMood=b.dataset.mood;$$('[data-mood]').forEach(x=>x.classList.toggle('selected',x===b));queueDiarySave()});$('#saveDiary').onclick=saveCurrentDiary;$('#deleteDiary').onclick=()=>{const date=$('#diaryDate').value;if(!diaryEntries[date]||!confirm('この日の日記を削除しますか？'))return;delete diaryEntries[date];localStorage.setItem('tsukinote-diary',JSON.stringify(diaryEntries));loadDiary(date);renderDiaryHistory()};$('#diarySearch').oninput=renderDiaryHistory;loadDiary(keyDate(today));
+$('#diaryDate').onchange=e=>loadDiary(e.target.value);$('#diaryTitle').oninput=$('#diaryBody').oninput=()=>{$('#diaryWordCount').textContent=`${($('#diaryTitle').value+$('#diaryBody').value).length}文字`;queueDiarySave()};$$('[data-mood]').forEach(b=>b.onclick=()=>{selectedMood=b.dataset.mood;$$('[data-mood]').forEach(x=>x.classList.toggle('selected',x===b));queueDiarySave()});$('#saveDiary').onclick=saveCurrentDiary;$('#deleteDiary').onclick=()=>{const date=$('#diaryDate').value;if(!diaryEntries[date]||!confirm('この日の日記を削除しますか？'))return;delete diaryEntries[date];localStorage.setItem('tsukinote-diary',JSON.stringify(diaryEntries));recordLocalChange();loadDiary(date);renderDiaryHistory()};$('#diarySearch').oninput=renderDiaryHistory;loadDiary(keyDate(today));
 
 function openEvent(e,date){
   $('#eventForm').reset();$('#eventId').value=e?.id||'';$('#eventDialogTitle').textContent=e?'予定を編集':'新しい予定';
@@ -165,6 +165,77 @@ function esc(s=''){return s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'
 function hexAlpha(hex,alpha){return hex+alpha}
 const backupKeys=['daynote-events','daynote-notes','daynote-calendars','daynote-notebooks','daynote-calendar-colors','daynote-notebook-colors','daynote-goals','tsukinote-exercises','tsukinote-exercise-records','tsukinote-exercise-targets','tsukinote-diary'];
 const backupArrayKeys=new Set(['daynote-events','daynote-notes','daynote-calendars','daynote-notebooks','tsukinote-exercises']);
+const cloudClientId='4e330336-9a95-42ff-a190-f7c91d71be89';
+const cloudScopes=['Files.ReadWrite.AppFolder'];
+const cloudFileUrl='https://graph.microsoft.com/v1.0/me/drive/special/approot:/TsukiNote-data.json:/content';
+const cloudRedirectUri='https://yappi21.github.io/TsukiNote-ver1/';
+let cloudSyncTimer=null,cloudSyncSuppressed=false,cloudSyncBusy=false,cloudAccount=null,msalApp=null;
+function recordLocalChange(){
+  if(cloudSyncSuppressed)return;
+  localStorage.setItem('tsukinote-local-updated-at',String(Date.now()));
+  if(cloudAccount&&localStorage.getItem('tsukinote-cloud-linked')==='1')scheduleCloudSync();
+}
+function scheduleCloudSync(){clearTimeout(cloudSyncTimer);cloudSyncTimer=setTimeout(()=>uploadCloudData(true),1800)}
+function validateBackup(backup){
+  if(!backup||backup.format!=='tsukinote-backup'||backup.version!==1||!backup.data||typeof backup.data!=='object')throw new Error('format');
+  const entries=Object.entries(backup.data).filter(([key])=>backupKeys.includes(key));
+  if(!entries.length)throw new Error('empty');
+  entries.forEach(([key,value])=>{if(typeof value!=='string')throw new Error('value');const parsed=JSON.parse(value),shouldBeArray=backupArrayKeys.has(key);if(shouldBeArray!==Array.isArray(parsed)||(!shouldBeArray&&(!parsed||typeof parsed!=='object')))throw new Error('shape')});
+  return entries;
+}
+function applyBackupData(backup){const entries=validateBackup(backup);cloudSyncSuppressed=true;backupKeys.forEach(key=>localStorage.removeItem(key));entries.forEach(([key,value])=>localStorage.setItem(key,value));cloudSyncSuppressed=false}
+function setCloudStatus(message,state=''){
+  $('#cloudSyncStatus').textContent=message;$('#cloudSyncIndicator').textContent=state||(!cloudAccount?'未接続':'接続済み');
+  $('#cloudSyncIndicator').className=state==='同期済み'?'synced':state==='エラー'?'error':'';
+}
+function updateCloudControls(){
+  const connected=!!cloudAccount;$('#cloudLogin').classList.toggle('hidden',connected);$('#cloudUpload').classList.toggle('hidden',!connected);$('#cloudDownload').classList.toggle('hidden',!connected);$('#cloudLogout').classList.toggle('hidden',!connected);
+  if(connected)setCloudStatus(`${cloudAccount.username} で接続しています。初回は保存元を選んでください。`,'接続済み');
+}
+async function cloudAccessToken(){
+  if(!msalApp||!cloudAccount)throw new Error('signin');
+  try{return (await msalApp.acquireTokenSilent({account:cloudAccount,scopes:cloudScopes})).accessToken}
+  catch(error){console.warn('OneDriveトークンを更新できませんでした',error);throw new Error('reauth')}
+}
+async function readCloudData(){
+  const response=await fetch(cloudFileUrl,{headers:{Authorization:`Bearer ${await cloudAccessToken()}`}});
+  if(response.status===404)return null;if(!response.ok)throw new Error(`graph-${response.status}`);const backup=await response.json();validateBackup(backup);return backup;
+}
+async function uploadCloudData(automatic=false){
+  if(cloudSyncBusy||!cloudAccount)return;cloudSyncBusy=true;clearTimeout(cloudSyncTimer);setCloudStatus(automatic?'変更をOneDriveへ同期中…':'OneDriveへ保存中…','同期中');
+  try{
+    cloudSyncSuppressed=true;const backup=prepareBackupData();cloudSyncSuppressed=false;
+    const response=await fetch(cloudFileUrl,{method:'PUT',headers:{Authorization:`Bearer ${await cloudAccessToken()}`,'Content-Type':'application/json'},body:JSON.stringify(backup)});
+    if(!response.ok)throw new Error(`graph-${response.status}`);
+    const syncedAt=Date.parse(backup.exportedAt);localStorage.setItem('tsukinote-cloud-linked','1');localStorage.setItem('tsukinote-last-cloud-sync',String(syncedAt));localStorage.setItem('tsukinote-local-updated-at',String(syncedAt));setCloudStatus(`同期しました（${new Date(syncedAt).toLocaleString('ja-JP')}）`,'同期済み');
+  }catch(error){cloudSyncSuppressed=false;console.warn('OneDriveへ保存できませんでした',error);setCloudStatus(error.message==='reauth'?'ログインの有効期限が切れました。ログアウト後、再度ログインしてください。':'OneDriveへ保存できませんでした。通信状態を確認してください。','エラー')}
+  finally{cloudSyncBusy=false}
+}
+async function downloadCloudData(manual=true){
+  if(cloudSyncBusy||!cloudAccount)return;cloudSyncBusy=true;setCloudStatus('OneDriveから読み込み中…','同期中');
+  try{
+    const backup=await readCloudData();if(!backup){setCloudStatus('OneDriveにTsukiNoteデータがまだありません。この端末から保存してください。','接続済み');return}
+    const savedDate=new Date(backup.exportedAt).toLocaleString('ja-JP');if(manual&&!confirm(`${savedDate}のOneDriveデータで、この端末のデータを上書きします。よろしいですか？`)){setCloudStatus('読み込みをキャンセルしました。','接続済み');return}
+    applyBackupData(backup);const syncedAt=Date.parse(backup.exportedAt)||Date.now();localStorage.setItem('tsukinote-cloud-linked','1');localStorage.setItem('tsukinote-last-cloud-sync',String(syncedAt));localStorage.setItem('tsukinote-local-updated-at',String(syncedAt));alert('OneDriveのデータを読み込みました。TsukiNoteを再読み込みします。');location.reload();
+  }catch(error){console.warn('OneDriveから読み込めませんでした',error);setCloudStatus(error.message==='reauth'?'ログインの有効期限が切れました。ログアウト後、再度ログインしてください。':'OneDriveから読み込めませんでした。','エラー')}
+  finally{cloudSyncBusy=false}
+}
+async function reconcileCloudData(){
+  if(localStorage.getItem('tsukinote-cloud-linked')!=='1')return;
+  try{
+    setCloudStatus('OneDriveの更新を確認中…','同期中');const remote=await readCloudData();if(!remote){await uploadCloudData(true);return}
+    const remoteAt=Date.parse(remote.exportedAt)||0,lastAt=Number(localStorage.getItem('tsukinote-last-cloud-sync'))||0,localAt=Number(localStorage.getItem('tsukinote-local-updated-at'))||0;
+    if(remoteAt>lastAt&&localAt>lastAt){setCloudStatus('この端末とOneDriveの両方に変更があります。読み込むか保存するか選んでください。','要確認');return}
+    if(remoteAt>lastAt){applyBackupData(remote);localStorage.setItem('tsukinote-last-cloud-sync',String(remoteAt));localStorage.setItem('tsukinote-local-updated-at',String(remoteAt));location.reload();return}
+    if(localAt>lastAt){await uploadCloudData(true);return}setCloudStatus('最新の状態です。','同期済み');
+  }catch(error){console.warn('自動同期を確認できませんでした',error);setCloudStatus('自動同期を確認できませんでした。「データ」から再試行できます。','エラー')}
+}
+async function initializeOneDrive(){
+  if(!window.msal){setCloudStatus('Microsoftログイン機能を読み込めませんでした。インターネット接続を確認してください。','エラー');return}
+  msalApp=new msal.PublicClientApplication({auth:{clientId:cloudClientId,authority:'https://login.microsoftonline.com/consumers',redirectUri:cloudRedirectUri},cache:{cacheLocation:'localStorage',storeAuthStateInCookie:false}});
+  try{await msalApp.initialize();const result=await msalApp.handleRedirectPromise();cloudAccount=result?.account||msalApp.getAllAccounts()[0]||null;if(cloudAccount)msalApp.setActiveAccount(cloudAccount);updateCloudControls();if(cloudAccount)await reconcileCloudData()}
+  catch(error){console.warn('Microsoftログインを完了できませんでした',error);setCloudStatus('Microsoftログインを完了できませんでした。もう一度お試しください。','エラー')}
+}
 function prepareBackupData(){
   save();saveCollections();saveExercises();saveGoals();
   if($('#diaryDate').value&&($('#diaryTitle').value.trim()||$('#diaryBody').value.trim()||selectedMood))saveCurrentDiary();
@@ -180,13 +251,10 @@ function exportBackup(){
 async function importBackup(file){
   try{
     const backup=JSON.parse(await file.text());
-    if(!backup||backup.format!=='tsukinote-backup'||backup.version!==1||!backup.data||typeof backup.data!=='object')throw new Error('format');
-    const entries=Object.entries(backup.data).filter(([key])=>backupKeys.includes(key));
-    if(!entries.length)throw new Error('empty');
-    entries.forEach(([key,value])=>{if(typeof value!=='string')throw new Error('value');const parsed=JSON.parse(value),shouldBeArray=backupArrayKeys.has(key);if(shouldBeArray!==Array.isArray(parsed)||(!shouldBeArray&&(!parsed||typeof parsed!=='object')))throw new Error('shape')});
+    const entries=validateBackup(backup);
     const savedDate=backup.exportedAt?new Date(backup.exportedAt).toLocaleString('ja-JP'):'日時不明';
     if(!confirm(`${savedDate}のバックアップを読み込みます。\n現在のTsukiNoteデータは上書きされます。よろしいですか？`)){$('#backupStatus').textContent='読み込みをキャンセルしました。';return}
-    backupKeys.forEach(key=>localStorage.removeItem(key));entries.forEach(([key,value])=>localStorage.setItem(key,value));
+    cloudSyncSuppressed=true;backupKeys.forEach(key=>localStorage.removeItem(key));entries.forEach(([key,value])=>localStorage.setItem(key,value));cloudSyncSuppressed=false;localStorage.setItem('tsukinote-local-updated-at',String(Date.now()));
     alert('データを復元しました。TsukiNoteを再読み込みします。');location.reload();
   }catch(error){
     console.warn('バックアップを読み込めませんでした',error);$('#backupStatus').textContent='読み込めませんでした。TsukiNoteから書き出したJSONファイルを選んでください。';
@@ -195,4 +263,10 @@ async function importBackup(file){
 $('#backupButton').onclick=()=>{$('#backupStatus').textContent='';$('#backupDialog').showModal()};
 $('#closeBackupDialog').onclick=$('#cancelBackupDialog').onclick=()=>$('#backupDialog').close();
 $('#exportData').onclick=exportBackup;$('#importData').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>{const file=e.target.files[0];if(file)importBackup(file)};
+$('#cloudLogin').onclick=()=>{if(location.protocol==='file:'){setCloudStatus('OneDrive同期はGitHub Pagesで公開したTsukiNoteから使用してください。','エラー');return}msalApp?.loginRedirect({scopes:cloudScopes,prompt:'select_account'})};
+$('#cloudLogout').onclick=()=>msalApp?.logoutRedirect({account:cloudAccount,postLogoutRedirectUri:cloudRedirectUri});
+$('#cloudUpload').onclick=()=>{if(confirm('この端末の現在のデータをOneDriveへ保存します。OneDriveに既存データがある場合は上書きされます。よろしいですか？'))uploadCloudData(false)};
+$('#cloudDownload').onclick=()=>downloadCloudData(true);
 renderCollections();render();
+initializeOneDrive();
+window.addEventListener('online',()=>{if(cloudAccount&&localStorage.getItem('tsukinote-cloud-linked')==='1')reconcileCloudData()});

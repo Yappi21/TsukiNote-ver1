@@ -39,7 +39,7 @@
         <div class="section-heading"><span>マイカレンダー</span><button id="addCalendar" title="カレンダーを追加">＋</button></div>
         <div id="calendarListItems"></div>
       </section>
-      <div class="storage-note">データはこのブラウザに安全に保存されます</div>
+      <div class="storage-note">データは端末内に保存され、OneDrive同期も選べます</div>
     </aside>
     <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="メニューを閉じる"></button>
 
@@ -193,11 +193,22 @@
         <button type="button" id="importData"><span>↑</span><strong>バックアップを読み込む</strong><small>保存したJSONファイルからデータを復元</small></button>
         <input id="importFile" type="file" accept="application/json,.json" hidden />
       </div>
+      <section class="cloud-sync-section">
+        <div class="cloud-sync-head"><div><strong>OneDrive同期</strong><small>iPhoneとパソコンで同じデータを使用</small></div><span id="cloudSyncIndicator">未接続</span></div>
+        <p id="cloudSyncStatus">Microsoftアカウントでログインすると、OneDriveのTsukiNote専用フォルダーに保存できます。</p>
+        <div class="cloud-sync-actions">
+          <button type="button" class="primary" id="cloudLogin">Microsoftでログイン</button>
+          <button type="button" class="secondary hidden" id="cloudUpload">この端末 → OneDrive</button>
+          <button type="button" class="secondary hidden" id="cloudDownload">OneDrive → この端末</button>
+          <button type="button" class="cloud-logout hidden" id="cloudLogout">ログアウト</button>
+        </div>
+      </section>
       <p class="backup-status" id="backupStatus" aria-live="polite"></p>
       <div class="backup-dialog-footer"><button type="button" class="secondary" id="cancelBackupDialog">閉じる</button></div>
     </div>
   </dialog>
 
+  <script src="msal-browser.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
