@@ -90,7 +90,7 @@ function renderCalendar(){
     if(k===keyDate(today))cell.classList.add('today-cell');
     cell.innerHTML=`<span class="day-number">${d.getDate()}</span>`;
     const matches=events.filter(e=>e.date<=k&&(e.endDate||e.date)>=k&&filters.has(e.category)&&(!q||(e.title+' '+e.memo).toLowerCase().includes(q)));
-    const itemLimit=calendarMode==='week'?8:(window.matchMedia('(max-width:760px)').matches?1:3);
+    const itemLimit=calendarMode==='week'?8:(window.matchMedia('(max-width:760px)').matches?2:3);
     matches.slice(0,itemLimit).forEach(e=>{const b=document.createElement('button');b.className=`event-chip ${e.type==='task'?'task-chip':''} ${e.completed?'completed':''}`;const color=calendarColors[e.category]||'#557bea';b.style.borderColor=color;b.style.background=hexAlpha(color,'18');b.style.color=color;const range=e.time+(e.endTime?'–'+e.endTime:'');const prefix=e.type==='task'?(e.completed?'☑ ':`☐ <time>${formatRemaining(e)}</time>`):(!e.allDay&&e.time?`<time>${range}</time>`:e.allDay?'<time>終日</time>':'');b.innerHTML=`${prefix}${esc(e.title)}`;b.onclick=x=>{x.stopPropagation();openEvent(e)};cell.appendChild(b)});
     if(matches.length>itemLimit)cell.insertAdjacentHTML('beforeend',`<div class="more-events">他 ${matches.length-itemLimit} 件</div>`);
     cell.onclick=()=>openDayAgenda(k);grid.appendChild(cell);
