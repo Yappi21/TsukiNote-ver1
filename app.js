@@ -41,7 +41,7 @@ $('#goalForm').onsubmit=()=>{const target=$('#goalType').value==='monthly'?'#mon
 $('#closeGoalDialog').onclick=$('#cancelGoalDialog').onclick=()=>$('#goalDialog').close();
 function refreshMobileGoals(){const monthly=$('#monthlyGoal').value.trim(),weekly=$('#weeklyGoal').value.trim();$('#mobileMonthlyGoalPreview').textContent=monthly||'まだ設定されていません';$('#mobileWeeklyGoalPreview').textContent=weekly||'まだ設定されていません'}
 $('#mobileGoalsButton').onclick=()=>{refreshMobileGoals();$('#mobileGoalsDialog').showModal()};$('#closeMobileGoals').onclick=()=>$('#mobileGoalsDialog').close();$$('[data-mobile-goal]').forEach(button=>button.onclick=()=>{$('#mobileGoalsDialog').close();openGoal(button.dataset.mobileGoal)});
-const save=()=>{localStorage.setItem('daynote-events',JSON.stringify(events));localStorage.setItem('daynote-notes',JSON.stringify(notes));recordLocalChange();schedulePushReminderSync()};
+const save=()=>{localStorage.setItem('daynote-events',JSON.stringify(events));localStorage.setItem('daynote-notes',JSON.stringify(notes));recordLocalChange();scheduleAzureCalendarSync();schedulePushReminderSync()};
 const saveCollections=()=>{localStorage.setItem('daynote-calendars',JSON.stringify(calendars));localStorage.setItem('daynote-notebooks',JSON.stringify(notebooks));localStorage.setItem('daynote-calendar-colors',JSON.stringify(calendarColors));localStorage.setItem('daynote-notebook-colors',JSON.stringify(notebookColors));recordLocalChange()};
 
 function renderCollections(){
@@ -58,7 +58,7 @@ function bindCollections(){
 }
 function openCollectionDialog(type){$('#collectionType').value=type;$('#collectionDialogTitle').textContent=type==='calendar'?'カレンダーを追加':'ノートブックを追加';$('#collectionName').value='';$('#collectionColor').value=type==='calendar'?'#557bea':'#51b99e';$('#collectionName').placeholder=type==='calendar'?'例：家族、健康、プロジェクト':'例：旅行、勉強、日記';$('#collectionError').textContent='';$('#collectionDialog').showModal();setTimeout(()=>$('#collectionName').focus(),50)}
 function addCalendar(){openCollectionDialog('calendar')}
-function deleteCalendar(name){if(calendars.length===1){alert('カレンダーは1つ以上必要です');return}if(!confirm(`「${name}」を削除しますか？予定は別のカレンダーへ移動します。`))return;calendars=calendars.filter(n=>n!==name);events=events.map(e=>e.category===name?{...e,category:calendars[0]}:e);save();saveCollections();renderCollections();renderCalendar()}
+function deleteCalendar(name){if(calendars.length===1){alert('カレンダーは1つ以上必要です');return}if(!confirm(`「${name}」を削除しますか？予定は別のカレンダーへ移動します。`))return;calendars=calendars.filter(n=>n!==name);events=events.map(e=>e.category===name?{...e,category:calendars[0],updated:Date.now()}:e);save();saveCollections();renderCollections();renderCalendar()}
 function addNotebook(){openCollectionDialog('notebook')}
 function deleteNotebook(name){if(notebooks.length===1){alert('ノートブックは1つ以上必要です');return}if(!confirm(`「${name}」を削除しますか？メモは別のノートブックへ移動します。`))return;notebooks=notebooks.filter(n=>n!==name);notes=notes.map(n=>n.notebook===name?{...n,notebook:notebooks[0]}:n);if(activeNotebook===name)activeNotebook='すべて';save();saveCollections();renderCollections();renderNotes()}
 $('#addCalendar').onclick=addCalendar;
@@ -166,6 +166,7 @@ setInterval(checkReminders,30000);setInterval(renderSidebarTasks,1000);checkRemi
 
 const pushApiBase='https://tsukinotepush-hnbabucsa3bpg0f5.japanwest-01.azurewebsites.net/api';
 let pushSyncTimer=null,pushSyncBusy=false;
+let calendarSyncTimer=null,calendarSyncBusy=false;
 function setPushStatus(message,state=''){
   $('#pushStatus').textContent=message;$('#pushIndicator').textContent=state||'未設定';$('#pushIndicator').className=state==='通知オン'?'synced':state==='エラー'?'error':'';
   const enabled=!!localStorage.getItem('tsukinote-push-key');$('#enablePush').classList.toggle('hidden',enabled);$('#disablePush').classList.toggle('hidden',!enabled);$('#pushAccessKey').classList.toggle('hidden',enabled);$('#pushAccessKey').closest('label').classList.toggle('hidden',enabled);updateNotificationStatus();
@@ -182,6 +183,21 @@ async function pushRequest(path,options={}){
   const response=await fetch(pushApiBase+path,{...options,headers:{'Content-Type':'application/json','X-TsukiNote-Key':key,...options.headers}});
   if(!response.ok){const detail=await response.json().catch(()=>({}));const error=new Error(detail.error||`push-${response.status}`);error.status=response.status;throw error}return response.json().catch(()=>({}));
 }
+function setCalendarSyncStatus(message,state=''){
+  $('#calendarSyncStatus').textContent=message;$('#calendarSyncIndicator').textContent=state||'未設定';$('#calendarSyncIndicator').className=state==='同期済み'?'synced':state==='エラー'?'error':'';
+  $('#syncCalendarNow').disabled=calendarSyncBusy||!localStorage.getItem('tsukinote-push-key');
+}
+function normalizeCalendarEvents(list){return list.map(e=>({...e,type:e.type||'event',endDate:e.endDate||e.date,endTime:e.endTime||'',dueTime:e.dueTime||'23:59',allDay:e.allDay||false,completed:e.completed||false,reminders:e.reminders||{hour:false,day:false},updated:Number(e.updated)||1}))}
+async function syncAzureCalendar(){
+  const key=localStorage.getItem('tsukinote-push-key');if(calendarSyncBusy||!key||!navigator.onLine)return;calendarSyncBusy=true;clearTimeout(calendarSyncTimer);setCalendarSyncStatus('Azureと予定を統合しています…','同期中');
+  try{
+    const deleted=JSON.parse(localStorage.getItem('tsukinote-deleted-events')||'{}'),state=await pushRequest('/calendar-data',{method:'POST',key,body:JSON.stringify({events,deleted})});
+    if(!Array.isArray(state.events)||!state.deleted||typeof state.deleted!=='object')throw new Error('invalid-calendar-state');
+    events=normalizeCalendarEvents(state.events);localStorage.setItem('daynote-events',JSON.stringify(events));localStorage.setItem('tsukinote-deleted-events',JSON.stringify(state.deleted));localStorage.setItem('tsukinote-calendar-last-sync',String(Date.now()));render();schedulePushReminderSync();setCalendarSyncStatus(`同期しました（${new Date().toLocaleString('ja-JP')}）`,'同期済み');
+  }catch(error){console.warn('Azure予定同期に失敗しました',error);setCalendarSyncStatus(error.status===401?'アクセスコードが一致しません。通知設定をやり直してください。':'予定を同期できませんでした。通信状態を確認してください。','エラー')}
+  finally{calendarSyncBusy=false;$('#syncCalendarNow').disabled=!localStorage.getItem('tsukinote-push-key')}
+}
+function scheduleAzureCalendarSync(delay=1800){if(!localStorage.getItem('tsukinote-push-key')){setCalendarSyncStatus('通知アクセスコードを登録すると、予定とタスクが自動同期されます。','未設定');return}clearTimeout(calendarSyncTimer);calendarSyncTimer=setTimeout(syncAzureCalendar,delay)}
 async function syncPushReminders(){
   if(pushSyncBusy||!localStorage.getItem('tsukinote-push-key')||!navigator.onLine)return;pushSyncBusy=true;clearTimeout(pushSyncTimer);
   try{await pushRequest('/reminders',{method:'POST',body:JSON.stringify({reminders:buildPushReminders()})});setPushStatus('予定の通知時刻をAzureと同期しました。','通知オン')}
@@ -199,23 +215,25 @@ async function enablePushNotifications(){
     const registration=await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;
     let subscription=await registration.pushManager.getSubscription();if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(config.publicKey)});
     await pushRequest('/push-subscriptions',{method:'POST',key,body:JSON.stringify({deviceId:pushDeviceId(),subscription:subscription.toJSON()})});
-    localStorage.setItem('tsukinote-push-key',key);await syncPushReminders();setPushStatus('この端末への通知を有効にしました。','通知オン');
+    localStorage.setItem('tsukinote-push-key',key);await syncAzureCalendar();await syncPushReminders();setPushStatus('この端末への通知を有効にしました。','通知オン');
   }catch(error){console.warn('プッシュ通知を有効にできませんでした',error);const message=error.message==='permission-denied'?'通知が許可されませんでした。端末の設定を確認してください。':error.message==='server-not-configured'?'Azure側の通知鍵がまだ設定されていません。':'通知を有効にできませんでした。アクセスコードと通信状態を確認してください。';setPushStatus(message,'エラー')}
   finally{$('#enablePush').disabled=false}
 }
 async function disablePushNotifications(){
   try{const registration=await navigator.serviceWorker.getRegistration('./sw.js'),subscription=await registration?.pushManager.getSubscription();if(subscription){try{await pushRequest('/push-subscriptions',{method:'DELETE',body:JSON.stringify({endpoint:subscription.endpoint})})}catch{}await subscription.unsubscribe()}}
-  finally{localStorage.removeItem('tsukinote-push-key');$('#pushAccessKey').value='';setPushStatus('この端末のプッシュ通知を解除しました。','未設定')}
+  finally{localStorage.removeItem('tsukinote-push-key');clearTimeout(calendarSyncTimer);$('#pushAccessKey').value='';setPushStatus('この端末のプッシュ通知を解除しました。','未設定');setCalendarSyncStatus('通知アクセスコードを登録すると、予定とタスクが自動同期されます。','未設定')}
 }
 async function initializePushNotifications(){
   const key=localStorage.getItem('tsukinote-push-key');if(!key){setPushStatus('iPhoneではSafariの共有メニューから「ホーム画面に追加」したTsukiNoteで設定してください。','未設定');return}
   if(!('serviceWorker'in navigator)||!('PushManager'in window)){setPushStatus('この端末はWebプッシュ通知に対応していません。','エラー');return}
-  try{await navigator.serviceWorker.register('./sw.js');const registration=await navigator.serviceWorker.ready,subscription=await registration.pushManager.getSubscription();if(subscription){setPushStatus('この端末の通知は有効です。','通知オン');schedulePushReminderSync()}else{localStorage.removeItem('tsukinote-push-key');setPushStatus('通知登録が解除されています。もう一度有効にしてください。','未設定')}}catch{setPushStatus('通知の状態を確認できませんでした。','エラー')}
+  try{await navigator.serviceWorker.register('./sw.js');const registration=await navigator.serviceWorker.ready,subscription=await registration.pushManager.getSubscription();if(subscription){setPushStatus('この端末の通知は有効です。','通知オン');scheduleAzureCalendarSync(0);schedulePushReminderSync()}else{localStorage.removeItem('tsukinote-push-key');setPushStatus('通知登録が解除されています。もう一度有効にしてください。','未設定')}}catch{setPushStatus('通知の状態を確認できませんでした。','エラー')}
 }
 $('#enablePush').onclick=enablePushNotifications;$('#disablePush').onclick=disablePushNotifications;
+$('#syncCalendarNow').onclick=syncAzureCalendar;
 function esc(s=''){return s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function hexAlpha(hex,alpha){return hex+alpha}
 const backupKeys=['daynote-events','daynote-notes','daynote-calendars','daynote-notebooks','daynote-calendar-colors','daynote-notebook-colors','daynote-goals','tsukinote-exercises','tsukinote-exercise-records','tsukinote-exercise-targets','tsukinote-diary','tsukinote-deleted-events'];
+const oneDriveBackupKeys=backupKeys.filter(key=>key!=='daynote-events'&&key!=='tsukinote-deleted-events');
 const backupArrayKeys=new Set(['daynote-events','daynote-notes','daynote-calendars','daynote-notebooks','tsukinote-exercises']);
 const cloudClientId='4e330336-9a95-42ff-a190-f7c91d71be89';
 const cloudScopes=['Files.ReadWrite.AppFolder'];
@@ -229,14 +247,14 @@ function recordLocalChange(){
   if(cloudAccount&&localStorage.getItem('tsukinote-cloud-linked')==='1')scheduleCloudSync();
 }
 function scheduleCloudSync(){clearTimeout(cloudSyncTimer);cloudSyncTimer=setTimeout(()=>uploadCloudData(true),1800)}
-function validateBackup(backup){
+function validateBackup(backup,allowedKeys=backupKeys){
   if(!backup||backup.format!=='tsukinote-backup'||backup.version!==1||!backup.data||typeof backup.data!=='object')throw new Error('format');
-  const entries=Object.entries(backup.data).filter(([key])=>backupKeys.includes(key));
+  const entries=Object.entries(backup.data).filter(([key])=>allowedKeys.includes(key));
   if(!entries.length)throw new Error('empty');
   entries.forEach(([key,value])=>{if(typeof value!=='string')throw new Error('value');const parsed=JSON.parse(value),shouldBeArray=backupArrayKeys.has(key);if(shouldBeArray!==Array.isArray(parsed)||(!shouldBeArray&&(!parsed||typeof parsed!=='object')))throw new Error('shape')});
   return entries;
 }
-function applyBackupData(backup){const entries=validateBackup(backup);cloudSyncSuppressed=true;backupKeys.forEach(key=>localStorage.removeItem(key));entries.forEach(([key,value])=>localStorage.setItem(key,value));cloudSyncSuppressed=false}
+function applyBackupData(backup,allowedKeys=backupKeys){const entries=validateBackup(backup,allowedKeys);cloudSyncSuppressed=true;allowedKeys.forEach(key=>localStorage.removeItem(key));entries.forEach(([key,value])=>localStorage.setItem(key,value));cloudSyncSuppressed=false}
 function setCloudStatus(message,state=''){
   $('#cloudSyncStatus').textContent=message;$('#cloudSyncIndicator').textContent=state||(!cloudAccount?'未接続':'接続済み');
   $('#cloudSyncIndicator').className=state==='同期済み'?'synced':state==='エラー'?'error':'';
@@ -255,38 +273,19 @@ async function readCloudSnapshot(){
   const metadataResponse=await fetch(cloudFileMetadataUrl,{headers});
   if(metadataResponse.status===404)return null;if(!metadataResponse.ok)throw new Error(`graph-${metadataResponse.status}`);
   const metadata=await metadataResponse.json(),response=await fetch(cloudFileUrl,{headers});
-  if(!response.ok)throw new Error(`graph-${response.status}`);const backup=await response.json();validateBackup(backup);return {backup,etag:metadata.eTag||''};
+  if(!response.ok)throw new Error(`graph-${response.status}`);const backup=await response.json();validateBackup(backup,oneDriveBackupKeys);return {backup,etag:metadata.eTag||''};
 }
 async function readCloudData(){return (await readCloudSnapshot())?.backup||null}
-function mergeEventBackups(local,remote){
-  const localEvents=JSON.parse(local.data['daynote-events']||'[]'),remoteEvents=JSON.parse(remote.data['daynote-events']||'[]');
-  const localDeleted=JSON.parse(local.data['tsukinote-deleted-events']||'{}'),remoteDeleted=JSON.parse(remote.data['tsukinote-deleted-events']||'{}'),deleted={...remoteDeleted};
-  Object.entries(localDeleted).forEach(([id,time])=>deleted[id]=Math.max(Number(deleted[id])||0,Number(time)||0));
-  const merged=new Map();
-  const add=(item,fallback)=>{if(!item?.id)return;const stamped={...item,updated:Number(item.updated)||fallback},current=merged.get(item.id);if(!current||stamped.updated>current.updated)merged.set(item.id,stamped)};
-  remoteEvents.forEach(item=>add(item,1));localEvents.forEach(item=>add(item,1));
-  const events=[...merged.values()].filter(item=>(Number(deleted[item.id])||0)<(Number(item.updated)||0));
-  return {events,deleted};
-}
-function mergeCloudBackups(local,remote){
-  validateBackup(local);validateBackup(remote);const localAt=Date.parse(local.exportedAt)||0,remoteAt=Date.parse(remote.exportedAt)||0,newer=localAt>=remoteAt?local:remote;
-  const data={...newer.data},merged=mergeEventBackups(local,remote);data['daynote-events']=JSON.stringify(merged.events);data['tsukinote-deleted-events']=JSON.stringify(merged.deleted);
-  return {format:'tsukinote-backup',version:1,app:'TsukiNote',exportedAt:new Date().toISOString(),data};
-}
-function applyMergedEvents(backup){
-  const mergedEvents=JSON.parse(backup.data['daynote-events']||'[]');localStorage.setItem('daynote-events',JSON.stringify(mergedEvents));localStorage.setItem('tsukinote-deleted-events',backup.data['tsukinote-deleted-events']||'{}');
-  events=mergedEvents.map(e=>({...e,type:e.type||'event',endDate:e.endDate||e.date,endTime:e.endTime||'',dueTime:e.dueTime||'23:59',allDay:e.allDay||false,completed:e.completed||false,reminders:e.reminders||{hour:false,day:false},updated:Number(e.updated)||0}));render();schedulePushReminderSync();
-}
 async function uploadCloudData(automatic=false){
   if(cloudSyncBusy||!cloudAccount)return;cloudSyncBusy=true;clearTimeout(cloudSyncTimer);setCloudStatus(automatic?'変更をOneDriveへ同期中…':'OneDriveへ保存中…','同期中');
   try{
-    cloudSyncSuppressed=true;const localBackup=prepareBackupData();cloudSyncSuppressed=false;let backup,response;
+    cloudSyncSuppressed=true;const localBackup=prepareBackupData(oneDriveBackupKeys);cloudSyncSuppressed=false;let backup,response;
     for(let attempt=0;attempt<3;attempt++){
-      const snapshot=await readCloudSnapshot();backup=snapshot?mergeCloudBackups(localBackup,snapshot.backup):localBackup;
+      const snapshot=await readCloudSnapshot();backup=localBackup;
       const headers={Authorization:`Bearer ${await cloudAccessToken()}`,'Content-Type':'application/json'};if(snapshot?.etag)headers['If-Match']=snapshot.etag;
       response=await fetch(cloudFileUrl,{method:'PUT',headers,body:JSON.stringify(backup)});if(response.status===412)continue;if(!response.ok)throw new Error(`graph-${response.status}`);break;
     }
-    if(!response?.ok)throw new Error('sync-conflict');applyMergedEvents(backup);
+    if(!response?.ok)throw new Error('sync-conflict');
     const syncedAt=Date.parse(backup.exportedAt);localStorage.setItem('tsukinote-cloud-linked','1');localStorage.setItem('tsukinote-last-cloud-sync',String(syncedAt));localStorage.setItem('tsukinote-local-updated-at',String(syncedAt));setCloudStatus(`同期しました（${new Date(syncedAt).toLocaleString('ja-JP')}）`,'同期済み');
   }catch(error){cloudSyncSuppressed=false;console.warn('OneDriveへ保存できませんでした',error);setCloudStatus(error.message==='reauth'?'ログインの有効期限が切れました。ログアウト後、再度ログインしてください。':'OneDriveへ保存できませんでした。通信状態を確認してください。','エラー')}
   finally{cloudSyncBusy=false}
@@ -295,8 +294,8 @@ async function downloadCloudData(manual=true){
   if(cloudSyncBusy||!cloudAccount)return;cloudSyncBusy=true;setCloudStatus('OneDriveから読み込み中…','同期中');
   try{
     const backup=await readCloudData();if(!backup){setCloudStatus('OneDriveにTsukiNoteデータがまだありません。この端末から保存してください。','接続済み');return}
-    const savedDate=new Date(backup.exportedAt).toLocaleString('ja-JP');if(manual&&!confirm(`${savedDate}のOneDriveデータで、この端末のデータを上書きします。よろしいですか？`)){setCloudStatus('読み込みをキャンセルしました。','接続済み');return}
-    applyBackupData(backup);const syncedAt=Date.parse(backup.exportedAt)||Date.now();localStorage.setItem('tsukinote-cloud-linked','1');localStorage.setItem('tsukinote-last-cloud-sync',String(syncedAt));localStorage.setItem('tsukinote-local-updated-at',String(syncedAt));alert('OneDriveのデータを読み込みました。TsukiNoteを再読み込みします。');location.reload();
+    const savedDate=new Date(backup.exportedAt).toLocaleString('ja-JP');if(manual&&!confirm(`${savedDate}のOneDriveにあるメモ・日記などを、この端末へ読み込みます。よろしいですか？`)){setCloudStatus('読み込みをキャンセルしました。','接続済み');return}
+    applyBackupData(backup,oneDriveBackupKeys);const syncedAt=Date.parse(backup.exportedAt)||Date.now();localStorage.setItem('tsukinote-cloud-linked','1');localStorage.setItem('tsukinote-last-cloud-sync',String(syncedAt));localStorage.setItem('tsukinote-local-updated-at',String(syncedAt));alert('OneDriveのメモ・日記データを読み込みました。TsukiNoteを再読み込みします。');location.reload();
   }catch(error){console.warn('OneDriveから読み込めませんでした',error);setCloudStatus(error.message==='reauth'?'ログインの有効期限が切れました。ログアウト後、再度ログインしてください。':'OneDriveから読み込めませんでした。','エラー')}
   finally{cloudSyncBusy=false}
 }
@@ -306,7 +305,7 @@ async function reconcileCloudData(){
     setCloudStatus('OneDriveの更新を確認中…','同期中');const remote=await readCloudData();if(!remote){await uploadCloudData(true);return}
     const remoteAt=Date.parse(remote.exportedAt)||0,lastAt=Number(localStorage.getItem('tsukinote-last-cloud-sync'))||0,localAt=Number(localStorage.getItem('tsukinote-local-updated-at'))||0;
     if(remoteAt>lastAt&&localAt>lastAt){await uploadCloudData(true);return}
-    if(remoteAt>lastAt){applyBackupData(remote);localStorage.setItem('tsukinote-last-cloud-sync',String(remoteAt));localStorage.setItem('tsukinote-local-updated-at',String(remoteAt));location.reload();return}
+    if(remoteAt>lastAt){applyBackupData(remote,oneDriveBackupKeys);localStorage.setItem('tsukinote-last-cloud-sync',String(remoteAt));localStorage.setItem('tsukinote-local-updated-at',String(remoteAt));location.reload();return}
     if(localAt>lastAt){await uploadCloudData(true);return}setCloudStatus('最新の状態です。','同期済み');
   }catch(error){console.warn('自動同期を確認できませんでした',error);setCloudStatus('自動同期を確認できませんでした。「データ」から再試行できます。','エラー')}
   finally{cloudReconcileBusy=false}
@@ -317,11 +316,11 @@ async function initializeOneDrive(){
   try{await msalApp.initialize();const result=await msalApp.handleRedirectPromise();cloudAccount=result?.account||msalApp.getAllAccounts()[0]||null;if(cloudAccount)msalApp.setActiveAccount(cloudAccount);updateCloudControls();if(cloudAccount)await reconcileCloudData()}
   catch(error){console.warn('Microsoftログインを完了できませんでした',error);setCloudStatus('Microsoftログインを完了できませんでした。もう一度お試しください。','エラー')}
 }
-function prepareBackupData(){
+function prepareBackupData(keys=backupKeys){
   save();saveCollections();saveExercises();saveGoals();
   if($('#diaryDate').value&&($('#diaryTitle').value.trim()||$('#diaryBody').value.trim()||selectedMood))saveCurrentDiary();
   localStorage.setItem('tsukinote-diary',JSON.stringify(diaryEntries));
-  const data={};backupKeys.forEach(key=>{const value=localStorage.getItem(key);if(value!==null)data[key]=value});
+  const data={};keys.forEach(key=>{const value=localStorage.getItem(key);if(value!==null)data[key]=value});
   return {format:'tsukinote-backup',version:1,app:'TsukiNote',exportedAt:new Date().toISOString(),data};
 }
 function exportBackup(){
@@ -346,12 +345,15 @@ $('#closeBackupDialog').onclick=$('#cancelBackupDialog').onclick=()=>$('#backupD
 $('#exportData').onclick=exportBackup;$('#importData').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>{const file=e.target.files[0];if(file)importBackup(file)};
 $('#cloudLogin').onclick=()=>{if(location.protocol==='file:'){setCloudStatus('OneDrive同期はGitHub Pagesで公開したTsukiNoteから使用してください。','エラー');return}msalApp?.loginRedirect({scopes:cloudScopes,prompt:'select_account'})};
 $('#cloudLogout').onclick=()=>msalApp?.logoutRedirect({account:cloudAccount,postLogoutRedirectUri:cloudRedirectUri});
-$('#cloudUpload').onclick=()=>{if(confirm('この端末とOneDriveの予定を統合して保存します。続けますか？'))uploadCloudData(false)};
+$('#cloudUpload').onclick=()=>{if(confirm('この端末のメモ・日記などをOneDriveへ保存します。続けますか？'))uploadCloudData(false)};
 $('#cloudDownload').onclick=()=>downloadCloudData(true);
 renderCollections();render();
 initializeOneDrive();
 initializePushNotifications();
+scheduleAzureCalendarSync(400);
 window.addEventListener('online',()=>{if(cloudAccount&&localStorage.getItem('tsukinote-cloud-linked')==='1')reconcileCloudData()});
-window.addEventListener('focus',()=>{if(cloudAccount)reconcileCloudData()});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&cloudAccount)reconcileCloudData()});
+window.addEventListener('online',()=>scheduleAzureCalendarSync(0));
+window.addEventListener('focus',()=>{if(cloudAccount)reconcileCloudData();scheduleAzureCalendarSync(0)});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&cloudAccount)reconcileCloudData();if(!document.hidden)scheduleAzureCalendarSync(0)});
 setInterval(()=>{if(cloudAccount&&!document.hidden)reconcileCloudData()},30000);
+setInterval(()=>{if(!document.hidden&&localStorage.getItem('tsukinote-push-key'))scheduleAzureCalendarSync(0)},30000);
