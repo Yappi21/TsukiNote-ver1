@@ -23,7 +23,7 @@ let events=JSON.parse(localStorage.getItem('daynote-events')||'null')||starterEv
 let notes=JSON.parse(localStorage.getItem('daynote-notes')||'null')||starterNotes;
 notes=notes.map(n=>({...n,notebook:n.notebook||'アイデア'}));
 let activeNotebook='すべて';
-events=events.map(e=>({...e,type:e.type||'event',endDate:e.endDate||e.date,endTime:e.endTime||'',dueTime:e.dueTime||'23:59',allDay:e.allDay||false,completed:e.completed||false,reminders:e.reminders||{hour:false,day:false}}));
+events=events.map(e=>({...e,type:e.type||'event',endDate:e.endDate||e.date,endTime:e.endTime||'',dueTime:e.dueTime||'23:59',allDay:e.allDay||false,completed:e.completed||false,reminders:e.reminders||{hour:false,day:false},updated:Number(e.updated)||0}));
 let editingType='event';
 let exerciseNames=JSON.parse(localStorage.getItem('tsukinote-exercises')||'null')||['腕立て伏せ','屈伸','腹筋','スクワット'];
 let exerciseRecords=JSON.parse(localStorage.getItem('tsukinote-exercise-records')||'{}');
@@ -130,9 +130,9 @@ function openEvent(e,date){
 function openNote(n){
   $('#noteForm').reset();$('#noteId').value=n?.id||'';$('#noteTitle').value=n?.title||'';$('#noteNotebook').value=n?.notebook||(activeNotebook==='すべて'?notebooks[0]:activeNotebook);$('#noteBody').value=n?.body||'';$('#notePinned').checked=n?.pinned||false;$('#deleteNote').style.visibility=n?'visible':'hidden';$('#noteDialog').showModal();setTimeout(()=>$('#noteTitle').focus(),50);
 }
-$('#eventForm').onsubmit=e=>{if($('#eventEndDate').value<$('#eventDate').value){e.preventDefault();alert('終了日は開始日以降にしてください');return}if(editingType==='event'&&!$('#eventAllDay').checked&&$('#eventDate').value===$('#eventEndDate').value&&$('#eventTime').value&&$('#eventEndTime').value&&$('#eventEndTime').value<=$('#eventTime').value){e.preventDefault();alert('終了時刻は開始時刻より後にしてください');return}const id=$('#eventId').value,timed=editingType==='event'&&!$('#eventAllDay').checked;const item={id:id||crypto.randomUUID(),type:editingType,title:$('#eventTitle').value.trim(),date:$('#eventDate').value,endDate:$('#eventEndDate').value,allDay:editingType==='event'&&$('#eventAllDay').checked,time:timed?$('#eventTime').value:'',endTime:timed?$('#eventEndTime').value:'',dueTime:editingType==='task'?$('#taskDueTime').value:'',completed:editingType==='task'&&$('#taskCompleted').checked,reminders:{thirty:$('#remind30').checked,hour:$('#remindHour').checked,day:$('#remindDay').checked},category:$('#eventCategory').value,memo:$('#eventMemo').value.trim()};events=id?events.map(e=>e.id===id?item:e):[...events,item];save();if(item.reminders.thirty||item.reminders.hour||item.reminders.day)requestNotificationPermission();render()};
+$('#eventForm').onsubmit=e=>{if($('#eventEndDate').value<$('#eventDate').value){e.preventDefault();alert('終了日は開始日以降にしてください');return}if(editingType==='event'&&!$('#eventAllDay').checked&&$('#eventDate').value===$('#eventEndDate').value&&$('#eventTime').value&&$('#eventEndTime').value&&$('#eventEndTime').value<=$('#eventTime').value){e.preventDefault();alert('終了時刻は開始時刻より後にしてください');return}const id=$('#eventId').value,timed=editingType==='event'&&!$('#eventAllDay').checked;const item={id:id||crypto.randomUUID(),type:editingType,title:$('#eventTitle').value.trim(),date:$('#eventDate').value,endDate:$('#eventEndDate').value,allDay:editingType==='event'&&$('#eventAllDay').checked,time:timed?$('#eventTime').value:'',endTime:timed?$('#eventEndTime').value:'',dueTime:editingType==='task'?$('#taskDueTime').value:'',completed:editingType==='task'&&$('#taskCompleted').checked,reminders:{thirty:$('#remind30').checked,hour:$('#remindHour').checked,day:$('#remindDay').checked},category:$('#eventCategory').value,memo:$('#eventMemo').value.trim(),updated:Date.now()};events=id?events.map(e=>e.id===id?item:e):[...events,item];save();if(item.reminders.thirty||item.reminders.hour||item.reminders.day)requestNotificationPermission();render()};
 $('#noteForm').onsubmit=()=>{const id=$('#noteId').value;const item={id:id||crypto.randomUUID(),title:$('#noteTitle').value.trim(),notebook:$('#noteNotebook').value,body:$('#noteBody').value.trim(),pinned:$('#notePinned').checked,updated:Date.now()};notes=id?notes.map(n=>n.id===id?item:n):[item,...notes];save();render()};
-$('#deleteEvent').onclick=()=>{events=events.filter(e=>e.id!==$('#eventId').value);save();$('#eventDialog').close();render()};
+$('#deleteEvent').onclick=()=>{const id=$('#eventId').value,deleted=JSON.parse(localStorage.getItem('tsukinote-deleted-events')||'{}');if(id)deleted[id]=Date.now();localStorage.setItem('tsukinote-deleted-events',JSON.stringify(deleted));events=events.filter(e=>e.id!==id);save();$('#eventDialog').close();render()};
 $('#deleteNote').onclick=()=>{notes=notes.filter(n=>n.id!==$('#noteId').value);save();$('#noteDialog').close();render()};
 $('#newEventButton').onclick=()=>{closeMobileSidebar();openEvent()};$('#mobileNewEvent').onclick=()=>openEvent();$('#newNoteButton').onclick=()=>openNote();
 function toggleAllDay(){$('#eventTimeLabel').classList.toggle('hidden',editingType==='event'&&$('#eventAllDay').checked)}
@@ -215,11 +215,12 @@ async function initializePushNotifications(){
 $('#enablePush').onclick=enablePushNotifications;$('#disablePush').onclick=disablePushNotifications;
 function esc(s=''){return s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function hexAlpha(hex,alpha){return hex+alpha}
-const backupKeys=['daynote-events','daynote-notes','daynote-calendars','daynote-notebooks','daynote-calendar-colors','daynote-notebook-colors','daynote-goals','tsukinote-exercises','tsukinote-exercise-records','tsukinote-exercise-targets','tsukinote-diary'];
+const backupKeys=['daynote-events','daynote-notes','daynote-calendars','daynote-notebooks','daynote-calendar-colors','daynote-notebook-colors','daynote-goals','tsukinote-exercises','tsukinote-exercise-records','tsukinote-exercise-targets','tsukinote-diary','tsukinote-deleted-events'];
 const backupArrayKeys=new Set(['daynote-events','daynote-notes','daynote-calendars','daynote-notebooks','tsukinote-exercises']);
 const cloudClientId='4e330336-9a95-42ff-a190-f7c91d71be89';
 const cloudScopes=['Files.ReadWrite.AppFolder'];
 const cloudFileUrl='https://graph.microsoft.com/v1.0/me/drive/special/approot:/TsukiNote-data.json:/content';
+const cloudFileMetadataUrl='https://graph.microsoft.com/v1.0/me/drive/special/approot:/TsukiNote-data.json';
 const cloudRedirectUri='https://yappi21.github.io/TsukiNote-ver1/';
 let cloudSyncTimer=null,cloudSyncSuppressed=false,cloudSyncBusy=false,cloudReconcileBusy=false,cloudAccount=null,msalApp=null;
 function recordLocalChange(){
@@ -249,16 +250,43 @@ async function cloudAccessToken(){
   try{return (await msalApp.acquireTokenSilent({account:cloudAccount,scopes:cloudScopes})).accessToken}
   catch(error){console.warn('OneDriveトークンを更新できませんでした',error);throw new Error('reauth')}
 }
-async function readCloudData(){
-  const response=await fetch(cloudFileUrl,{headers:{Authorization:`Bearer ${await cloudAccessToken()}`}});
-  if(response.status===404)return null;if(!response.ok)throw new Error(`graph-${response.status}`);const backup=await response.json();validateBackup(backup);return backup;
+async function readCloudSnapshot(){
+  const token=await cloudAccessToken(),headers={Authorization:`Bearer ${token}`};
+  const metadataResponse=await fetch(cloudFileMetadataUrl,{headers});
+  if(metadataResponse.status===404)return null;if(!metadataResponse.ok)throw new Error(`graph-${metadataResponse.status}`);
+  const metadata=await metadataResponse.json(),response=await fetch(cloudFileUrl,{headers});
+  if(!response.ok)throw new Error(`graph-${response.status}`);const backup=await response.json();validateBackup(backup);return {backup,etag:metadata.eTag||''};
+}
+async function readCloudData(){return (await readCloudSnapshot())?.backup||null}
+function mergeEventBackups(local,remote){
+  const localEvents=JSON.parse(local.data['daynote-events']||'[]'),remoteEvents=JSON.parse(remote.data['daynote-events']||'[]');
+  const localDeleted=JSON.parse(local.data['tsukinote-deleted-events']||'{}'),remoteDeleted=JSON.parse(remote.data['tsukinote-deleted-events']||'{}'),deleted={...remoteDeleted};
+  Object.entries(localDeleted).forEach(([id,time])=>deleted[id]=Math.max(Number(deleted[id])||0,Number(time)||0));
+  const merged=new Map();
+  const add=(item,fallback)=>{if(!item?.id)return;const stamped={...item,updated:Number(item.updated)||fallback},current=merged.get(item.id);if(!current||stamped.updated>current.updated)merged.set(item.id,stamped)};
+  remoteEvents.forEach(item=>add(item,1));localEvents.forEach(item=>add(item,1));
+  const events=[...merged.values()].filter(item=>(Number(deleted[item.id])||0)<(Number(item.updated)||0));
+  return {events,deleted};
+}
+function mergeCloudBackups(local,remote){
+  validateBackup(local);validateBackup(remote);const localAt=Date.parse(local.exportedAt)||0,remoteAt=Date.parse(remote.exportedAt)||0,newer=localAt>=remoteAt?local:remote;
+  const data={...newer.data},merged=mergeEventBackups(local,remote);data['daynote-events']=JSON.stringify(merged.events);data['tsukinote-deleted-events']=JSON.stringify(merged.deleted);
+  return {format:'tsukinote-backup',version:1,app:'TsukiNote',exportedAt:new Date().toISOString(),data};
+}
+function applyMergedEvents(backup){
+  const mergedEvents=JSON.parse(backup.data['daynote-events']||'[]');localStorage.setItem('daynote-events',JSON.stringify(mergedEvents));localStorage.setItem('tsukinote-deleted-events',backup.data['tsukinote-deleted-events']||'{}');
+  events=mergedEvents.map(e=>({...e,type:e.type||'event',endDate:e.endDate||e.date,endTime:e.endTime||'',dueTime:e.dueTime||'23:59',allDay:e.allDay||false,completed:e.completed||false,reminders:e.reminders||{hour:false,day:false},updated:Number(e.updated)||0}));render();schedulePushReminderSync();
 }
 async function uploadCloudData(automatic=false){
   if(cloudSyncBusy||!cloudAccount)return;cloudSyncBusy=true;clearTimeout(cloudSyncTimer);setCloudStatus(automatic?'変更をOneDriveへ同期中…':'OneDriveへ保存中…','同期中');
   try{
-    cloudSyncSuppressed=true;const backup=prepareBackupData();cloudSyncSuppressed=false;
-    const response=await fetch(cloudFileUrl,{method:'PUT',headers:{Authorization:`Bearer ${await cloudAccessToken()}`,'Content-Type':'application/json'},body:JSON.stringify(backup)});
-    if(!response.ok)throw new Error(`graph-${response.status}`);
+    cloudSyncSuppressed=true;const localBackup=prepareBackupData();cloudSyncSuppressed=false;let backup,response;
+    for(let attempt=0;attempt<3;attempt++){
+      const snapshot=await readCloudSnapshot();backup=snapshot?mergeCloudBackups(localBackup,snapshot.backup):localBackup;
+      const headers={Authorization:`Bearer ${await cloudAccessToken()}`,'Content-Type':'application/json'};if(snapshot?.etag)headers['If-Match']=snapshot.etag;
+      response=await fetch(cloudFileUrl,{method:'PUT',headers,body:JSON.stringify(backup)});if(response.status===412)continue;if(!response.ok)throw new Error(`graph-${response.status}`);break;
+    }
+    if(!response?.ok)throw new Error('sync-conflict');applyMergedEvents(backup);
     const syncedAt=Date.parse(backup.exportedAt);localStorage.setItem('tsukinote-cloud-linked','1');localStorage.setItem('tsukinote-last-cloud-sync',String(syncedAt));localStorage.setItem('tsukinote-local-updated-at',String(syncedAt));setCloudStatus(`同期しました（${new Date(syncedAt).toLocaleString('ja-JP')}）`,'同期済み');
   }catch(error){cloudSyncSuppressed=false;console.warn('OneDriveへ保存できませんでした',error);setCloudStatus(error.message==='reauth'?'ログインの有効期限が切れました。ログアウト後、再度ログインしてください。':'OneDriveへ保存できませんでした。通信状態を確認してください。','エラー')}
   finally{cloudSyncBusy=false}
@@ -277,7 +305,7 @@ async function reconcileCloudData(){
   try{
     setCloudStatus('OneDriveの更新を確認中…','同期中');const remote=await readCloudData();if(!remote){await uploadCloudData(true);return}
     const remoteAt=Date.parse(remote.exportedAt)||0,lastAt=Number(localStorage.getItem('tsukinote-last-cloud-sync'))||0,localAt=Number(localStorage.getItem('tsukinote-local-updated-at'))||0;
-    if(remoteAt>lastAt&&localAt>lastAt){setCloudStatus('この端末とOneDriveの両方に変更があります。読み込むか保存するか選んでください。','要確認');return}
+    if(remoteAt>lastAt&&localAt>lastAt){await uploadCloudData(true);return}
     if(remoteAt>lastAt){applyBackupData(remote);localStorage.setItem('tsukinote-last-cloud-sync',String(remoteAt));localStorage.setItem('tsukinote-local-updated-at',String(remoteAt));location.reload();return}
     if(localAt>lastAt){await uploadCloudData(true);return}setCloudStatus('最新の状態です。','同期済み');
   }catch(error){console.warn('自動同期を確認できませんでした',error);setCloudStatus('自動同期を確認できませんでした。「データ」から再試行できます。','エラー')}
@@ -318,7 +346,7 @@ $('#closeBackupDialog').onclick=$('#cancelBackupDialog').onclick=()=>$('#backupD
 $('#exportData').onclick=exportBackup;$('#importData').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>{const file=e.target.files[0];if(file)importBackup(file)};
 $('#cloudLogin').onclick=()=>{if(location.protocol==='file:'){setCloudStatus('OneDrive同期はGitHub Pagesで公開したTsukiNoteから使用してください。','エラー');return}msalApp?.loginRedirect({scopes:cloudScopes,prompt:'select_account'})};
 $('#cloudLogout').onclick=()=>msalApp?.logoutRedirect({account:cloudAccount,postLogoutRedirectUri:cloudRedirectUri});
-$('#cloudUpload').onclick=()=>{if(confirm('この端末の現在のデータをOneDriveへ保存します。OneDriveに既存データがある場合は上書きされます。よろしいですか？'))uploadCloudData(false)};
+$('#cloudUpload').onclick=()=>{if(confirm('この端末とOneDriveの予定を統合して保存します。続けますか？'))uploadCloudData(false)};
 $('#cloudDownload').onclick=()=>downloadCloudData(true);
 renderCollections();render();
 initializeOneDrive();
