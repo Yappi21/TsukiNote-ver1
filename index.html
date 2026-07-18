@@ -207,9 +207,12 @@
       </section>
       <section class="push-sync-section">
         <div class="cloud-sync-head"><div><strong>予定・タスクのAzure同期</strong><small>パソコンとスマホで同じ予定を使用</small></div><span id="calendarSyncIndicator">未設定</span></div>
-        <p id="calendarSyncStatus">通知アクセスコードを登録すると、予定とタスクが自動同期されます。</p>
+        <p id="calendarSyncStatus">Azureのアクセスコードを登録すると、通知とは別に予定とタスクを自動同期できます。</p>
+        <label class="push-key-label" id="calendarAccessKeyLabel">Azureアクセスコード<input id="calendarAccessKey" type="password" autocomplete="off" placeholder="Azureに設定した秘密コード" /></label>
         <div class="cloud-sync-actions">
-          <button type="button" class="secondary" id="syncCalendarNow">今すぐ同期</button>
+          <button type="button" class="primary" id="enableCalendarSync">Azure同期を有効にする</button>
+          <button type="button" class="secondary hidden" id="syncCalendarNow">今すぐ同期</button>
+          <button type="button" class="cloud-logout hidden" id="disableCalendarSync">同期設定を解除</button>
         </div>
       </section>
       <section class="push-sync-section">

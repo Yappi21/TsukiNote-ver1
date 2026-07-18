@@ -179,25 +179,34 @@ function buildPushReminders(){
   return result;
 }
 async function pushRequest(path,options={}){
-  const key=options.key||localStorage.getItem('tsukinote-push-key')||'';
+  const key=options.key||localStorage.getItem('tsukinote-azure-key')||localStorage.getItem('tsukinote-push-key')||'';
   const response=await fetch(pushApiBase+path,{...options,headers:{'Content-Type':'application/json','X-TsukiNote-Key':key,...options.headers}});
   if(!response.ok){const detail=await response.json().catch(()=>({}));const error=new Error(detail.error||`push-${response.status}`);error.status=response.status;throw error}return response.json().catch(()=>({}));
 }
 function setCalendarSyncStatus(message,state=''){
   $('#calendarSyncStatus').textContent=message;$('#calendarSyncIndicator').textContent=state||'未設定';$('#calendarSyncIndicator').className=state==='同期済み'?'synced':state==='エラー'?'error':'';
-  $('#syncCalendarNow').disabled=calendarSyncBusy||!localStorage.getItem('tsukinote-push-key');
+  const enabled=!!localStorage.getItem('tsukinote-azure-key');
+  $('#calendarAccessKeyLabel').classList.toggle('hidden',enabled);$('#enableCalendarSync').classList.toggle('hidden',enabled);$('#syncCalendarNow').classList.toggle('hidden',!enabled);$('#disableCalendarSync').classList.toggle('hidden',!enabled);$('#syncCalendarNow').disabled=calendarSyncBusy||!enabled;
 }
 function normalizeCalendarEvents(list){return list.map(e=>({...e,type:e.type||'event',endDate:e.endDate||e.date,endTime:e.endTime||'',dueTime:e.dueTime||'23:59',allDay:e.allDay||false,completed:e.completed||false,reminders:e.reminders||{hour:false,day:false},updated:Number(e.updated)||1}))}
 async function syncAzureCalendar(){
-  const key=localStorage.getItem('tsukinote-push-key');if(calendarSyncBusy||!key||!navigator.onLine)return;calendarSyncBusy=true;clearTimeout(calendarSyncTimer);setCalendarSyncStatus('Azureと予定を統合しています…','同期中');
+  const key=localStorage.getItem('tsukinote-azure-key');if(calendarSyncBusy||!key||!navigator.onLine)return;calendarSyncBusy=true;clearTimeout(calendarSyncTimer);setCalendarSyncStatus('Azureと予定を統合しています…','同期中');
   try{
     const deleted=JSON.parse(localStorage.getItem('tsukinote-deleted-events')||'{}'),state=await pushRequest('/calendar-data',{method:'POST',key,body:JSON.stringify({events,deleted})});
     if(!Array.isArray(state.events)||!state.deleted||typeof state.deleted!=='object')throw new Error('invalid-calendar-state');
     events=normalizeCalendarEvents(state.events);localStorage.setItem('daynote-events',JSON.stringify(events));localStorage.setItem('tsukinote-deleted-events',JSON.stringify(state.deleted));localStorage.setItem('tsukinote-calendar-last-sync',String(Date.now()));render();schedulePushReminderSync();setCalendarSyncStatus(`同期しました（${new Date().toLocaleString('ja-JP')}）`,'同期済み');
-  }catch(error){console.warn('Azure予定同期に失敗しました',error);setCalendarSyncStatus(error.status===401?'アクセスコードが一致しません。通知設定をやり直してください。':'予定を同期できませんでした。通信状態を確認してください。','エラー')}
-  finally{calendarSyncBusy=false;$('#syncCalendarNow').disabled=!localStorage.getItem('tsukinote-push-key')}
+  }catch(error){console.warn('Azure予定同期に失敗しました',error);setCalendarSyncStatus(error.status===401?'アクセスコードが一致しません。同期設定を解除して再登録してください。':error.status===503?'Azure Functionsが停止中です。Azureで再起動してから再試行してください。':'予定を同期できませんでした。通信状態を確認してください。','エラー')}
+  finally{calendarSyncBusy=false;$('#syncCalendarNow').disabled=!localStorage.getItem('tsukinote-azure-key')}
 }
-function scheduleAzureCalendarSync(delay=1800){if(!localStorage.getItem('tsukinote-push-key')){setCalendarSyncStatus('通知アクセスコードを登録すると、予定とタスクが自動同期されます。','未設定');return}clearTimeout(calendarSyncTimer);calendarSyncTimer=setTimeout(syncAzureCalendar,delay)}
+function scheduleAzureCalendarSync(delay=1800){if(!localStorage.getItem('tsukinote-azure-key')){setCalendarSyncStatus('Azureのアクセスコードを登録すると、通知とは別に予定とタスクを自動同期できます。','未設定');return}clearTimeout(calendarSyncTimer);calendarSyncTimer=setTimeout(syncAzureCalendar,delay)}
+async function enableAzureCalendarSync(){
+  const key=$('#calendarAccessKey').value.trim();if(key.length<20){setCalendarSyncStatus('20文字以上のAzureアクセスコードを入力してください。','エラー');return}
+  $('#enableCalendarSync').disabled=true;setCalendarSyncStatus('Azureへの接続を確認しています…','設定中');
+  try{await pushRequest('/calendar-data',{method:'GET',key});localStorage.setItem('tsukinote-azure-key',key);$('#calendarAccessKey').value='';setCalendarSyncStatus('接続できました。予定とタスクを同期します。','同期中');await syncAzureCalendar()}
+  catch(error){setCalendarSyncStatus(error.status===401?'アクセスコードが一致しません。':error.status===503?'Azure Functionsが停止中です。Azureで再起動してから再試行してください。':'Azureに接続できませんでした。通信状態を確認してください。','エラー')}
+  finally{$('#enableCalendarSync').disabled=false}
+}
+function disableAzureCalendarSync(){localStorage.removeItem('tsukinote-azure-key');clearTimeout(calendarSyncTimer);$('#calendarAccessKey').value='';setCalendarSyncStatus('Azure同期を解除しました。端末内の予定は削除されません。','未設定')}
 async function syncPushReminders(){
   if(pushSyncBusy||!localStorage.getItem('tsukinote-push-key')||!navigator.onLine)return;pushSyncBusy=true;clearTimeout(pushSyncTimer);
   try{await pushRequest('/reminders',{method:'POST',body:JSON.stringify({reminders:buildPushReminders()})});setPushStatus('予定の通知時刻をAzureと同期しました。','通知オン')}
@@ -211,17 +220,17 @@ async function enablePushNotifications(){
   $('#enablePush').disabled=true;setPushStatus('通知を設定しています…','設定中');
   try{
     const permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('permission-denied');
-    const configResponse=await fetch(pushApiBase+'/push-config',{cache:'no-store'});if(!configResponse.ok)throw new Error('server-not-configured');const config=await configResponse.json();
+    const configResponse=await fetch(pushApiBase+'/push-config',{cache:'no-store'});if(configResponse.status===503)throw new Error('server-unavailable');if(!configResponse.ok)throw new Error('server-not-configured');const config=await configResponse.json();
     const registration=await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;
     let subscription=await registration.pushManager.getSubscription();if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(config.publicKey)});
     await pushRequest('/push-subscriptions',{method:'POST',key,body:JSON.stringify({deviceId:pushDeviceId(),subscription:subscription.toJSON()})});
-    localStorage.setItem('tsukinote-push-key',key);await syncAzureCalendar();await syncPushReminders();setPushStatus('この端末への通知を有効にしました。','通知オン');
-  }catch(error){console.warn('プッシュ通知を有効にできませんでした',error);const message=error.message==='permission-denied'?'通知が許可されませんでした。端末の設定を確認してください。':error.message==='server-not-configured'?'Azure側の通知鍵がまだ設定されていません。':'通知を有効にできませんでした。アクセスコードと通信状態を確認してください。';setPushStatus(message,'エラー')}
+    localStorage.setItem('tsukinote-push-key',key);if(!localStorage.getItem('tsukinote-azure-key'))localStorage.setItem('tsukinote-azure-key',key);await syncAzureCalendar();await syncPushReminders();setPushStatus('この端末への通知を有効にしました。','通知オン');
+  }catch(error){console.warn('プッシュ通知を有効にできませんでした',error);const message=error.message==='permission-denied'?'通知が許可されませんでした。端末の設定を確認してください。':error.message==='server-unavailable'?'Azure Functionsが停止中です。Azureで再起動してください。':error.message==='server-not-configured'?'Azure側の通知鍵がまだ設定されていません。':'通知を有効にできませんでした。アクセスコードと通信状態を確認してください。';setPushStatus(message,'エラー')}
   finally{$('#enablePush').disabled=false}
 }
 async function disablePushNotifications(){
   try{const registration=await navigator.serviceWorker.getRegistration('./sw.js'),subscription=await registration?.pushManager.getSubscription();if(subscription){try{await pushRequest('/push-subscriptions',{method:'DELETE',body:JSON.stringify({endpoint:subscription.endpoint})})}catch{}await subscription.unsubscribe()}}
-  finally{localStorage.removeItem('tsukinote-push-key');clearTimeout(calendarSyncTimer);$('#pushAccessKey').value='';setPushStatus('この端末のプッシュ通知を解除しました。','未設定');setCalendarSyncStatus('通知アクセスコードを登録すると、予定とタスクが自動同期されます。','未設定')}
+  finally{localStorage.removeItem('tsukinote-push-key');$('#pushAccessKey').value='';setPushStatus('この端末のプッシュ通知を解除しました。Azure予定同期はそのまま利用できます。','未設定')}
 }
 async function initializePushNotifications(){
   const key=localStorage.getItem('tsukinote-push-key');if(!key){setPushStatus('iPhoneではSafariの共有メニューから「ホーム画面に追加」したTsukiNoteで設定してください。','未設定');return}
@@ -229,7 +238,7 @@ async function initializePushNotifications(){
   try{await navigator.serviceWorker.register('./sw.js');const registration=await navigator.serviceWorker.ready,subscription=await registration.pushManager.getSubscription();if(subscription){setPushStatus('この端末の通知は有効です。','通知オン');scheduleAzureCalendarSync(0);schedulePushReminderSync()}else{localStorage.removeItem('tsukinote-push-key');setPushStatus('通知登録が解除されています。もう一度有効にしてください。','未設定')}}catch{setPushStatus('通知の状態を確認できませんでした。','エラー')}
 }
 $('#enablePush').onclick=enablePushNotifications;$('#disablePush').onclick=disablePushNotifications;
-$('#syncCalendarNow').onclick=syncAzureCalendar;
+$('#enableCalendarSync').onclick=enableAzureCalendarSync;$('#disableCalendarSync').onclick=disableAzureCalendarSync;$('#syncCalendarNow').onclick=syncAzureCalendar;
 function esc(s=''){return s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function hexAlpha(hex,alpha){return hex+alpha}
 const backupKeys=['daynote-events','daynote-notes','daynote-calendars','daynote-notebooks','daynote-calendar-colors','daynote-notebook-colors','daynote-goals','tsukinote-exercises','tsukinote-exercise-records','tsukinote-exercise-targets','tsukinote-diary','tsukinote-deleted-events'];
@@ -356,4 +365,4 @@ window.addEventListener('online',()=>scheduleAzureCalendarSync(0));
 window.addEventListener('focus',()=>{if(cloudAccount)reconcileCloudData();scheduleAzureCalendarSync(0)});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&cloudAccount)reconcileCloudData();if(!document.hidden)scheduleAzureCalendarSync(0)});
 setInterval(()=>{if(cloudAccount&&!document.hidden)reconcileCloudData()},30000);
-setInterval(()=>{if(!document.hidden&&localStorage.getItem('tsukinote-push-key'))scheduleAzureCalendarSync(0)},30000);
+setInterval(()=>{if(!document.hidden&&localStorage.getItem('tsukinote-azure-key'))scheduleAzureCalendarSync(0)},30000);
